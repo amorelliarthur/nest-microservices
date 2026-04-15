@@ -1,5 +1,5 @@
-// src/users/dto/create-user.dto.ts
 import { IsEmail, IsNotEmpty, IsString, Length } from 'class-validator';
+import { IsCPF } from 'brazilian-class-validator';
 
 export class CreateUserDto {
     @IsString()
@@ -14,6 +14,6 @@ export class CreateUserDto {
     senha!: string;
 
     @IsString()
-    @IsNotEmpty({ message: 'CPF é obrigatório' })
+    @IsCPF({ message: 'CPF inválido' })
     cpf!: string;
 }
