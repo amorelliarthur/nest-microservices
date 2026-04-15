@@ -38,6 +38,17 @@ export class UsersService {
         return new this.userModel({ ...dto, senha: senhaHash, deletedAt: null }).save();
     }
 
+    async findAll(nome?: string): Promise<UserDocument[]> {
+        const filtro: any = { deletedAt: null };
+
+        // Se enviou nome, busca por regex case-insensitive
+        if (nome) {
+            filtro.nome = { $regex: nome, $options: 'i' };
+        }
+
+        return this.userModel.find(filtro);
+    }
+
     async findById(id: string): Promise<UserDocument> {
         const user = await this.userModel.findOne({ _id: id, deletedAt: null });
         if (!user) throw new NotFoundException('Usuário não encontrado');

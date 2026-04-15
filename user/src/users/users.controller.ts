@@ -1,6 +1,6 @@
 import {
     Controller, Get, Post, Patch, Delete,
-    Param, Body, HttpCode, HttpStatus,
+    Param, Body, Query, HttpCode, HttpStatus,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -22,6 +22,11 @@ export class UsersController {
     // authenticate(@Body() body: { email: string; senha: string }) {
     //     return this.usersService.authenticate(body.email, body.senha);
     // }
+
+    @Get()
+    findAll(@Query('nome') nome?: string) {
+        return this.usersService.findAll(nome);
+    }
 
     @Get(':id')
     findById(@Param('id') id: string) {
