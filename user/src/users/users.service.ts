@@ -17,17 +17,25 @@ export class UsersService {
     ) { }
 
     async create(dto: CreateUserDto): Promise<UserDocument> {
-        const exists = await this.userModel.findOne({
-            $or: [{ email: dto.email }, { cpf: dto.cpf }], deletedAt: null,
+        const existe = await this.userModel.findOne({
+            $or: [{ email: dto.email }, { cpf: dto.cpf }],
         });
 
-        if (exists) {
+        // Ativo: bloqueia
+        if (existe && !existe.deletedAt) {
             throw new ConflictException('Email ou CPF já cadastrado');
         }
 
         const senhaHash = await bcrypt.hash(dto.senha, 10);
-        const user = new this.userModel({ ...dto, senha: senhaHash, deletedAt: null });
-        return user.save();
+
+        // Deletado: reativa com os novos dados
+        if (existe && existe.deletedAt) {
+            existe.set({ ...dto, senha: senhaHash, deletedAt: null });
+            return existe.save();
+        }
+
+        // Novo usuário
+        return new this.userModel({ ...dto, senha: senhaHash, deletedAt: null }).save();
     }
 
     async findById(id: string): Promise<UserDocument> {
