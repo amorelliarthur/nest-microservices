@@ -1,5 +1,6 @@
 import { IsEmail, IsNotEmpty, IsString, Length } from 'class-validator';
 import { IsCPF } from 'brazilian-class-validator';
+import { Transform } from 'class-transformer';
 
 export class CreateUserDto {
     @IsString()
@@ -13,7 +14,7 @@ export class CreateUserDto {
     @Length(6, 100, { message: 'Senha deve ter no mínimo 6 caracteres' })
     senha!: string;
 
-    @IsString()
+    @Transform(({ value }) => value.replace(/\D/g, ''))
     @IsCPF({ message: 'CPF inválido' })
     cpf!: string;
 }
