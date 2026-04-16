@@ -2,6 +2,7 @@ import {
     Injectable,
     ConflictException,
     NotFoundException,
+    UnauthorizedException
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -56,17 +57,17 @@ export class UsersService {
     }
 
     // Usado internamente pelo auth-service para autenticar
-    // async authenticate(email: string, senha: string) {
-    //     const user = await this.userModel.findOne({ email, deletedAt: null });
-    //     if (!user) throw new NotFoundException('Usuário não encontrado');
+    async authenticate(email: string, senha: string) {
+        const user = await this.userModel.findOne({ email, deletedAt: null });
+        if (!user) throw new NotFoundException('Usuário não encontrado');
 
-    //     const senhaValida = await bcrypt.compare(senha, user.senha);
-    //     if (!senhaValida) throw new ConflictException('Senha inválida');
+        const senhaValida = await bcrypt.compare(senha, user.senha);
+        if (!senhaValida) throw new UnauthorizedException('Credenciais inválidas');
 
-    //     // Não retorna a senha para fora do serviço
-    //     const { senha: _, ...result } = user.toObject();
-    //     return result;
-    // }
+        // Não retorna a senha para fora do serviço
+        const { senha: _, ...result } = user.toObject();
+        return result;
+    }
 
     async update(id: string, dto: UpdateUserDto): Promise<UserDocument> {
         if (dto.senha) {

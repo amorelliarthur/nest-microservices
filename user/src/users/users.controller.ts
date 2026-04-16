@@ -17,11 +17,11 @@ export class UsersController {
     }
 
     // Rota interna usada pelo auth-service
-    // @Post('authenticate')
-    // @HttpCode(HttpStatus.OK)
-    // authenticate(@Body() body: { email: string; senha: string }) {
-    //     return this.usersService.authenticate(body.email, body.senha);
-    // }
+    @Post('authenticate')
+    @HttpCode(HttpStatus.OK)
+    authenticate(@Body() body: { email: string; senha: string }) {
+        return this.usersService.authenticate(body.email, body.senha);
+    }
 
     @Get()
     findAll(@Query('nome') nome?: string) {
