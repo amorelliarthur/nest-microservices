@@ -25,7 +25,7 @@ export class AuthGuard implements CanActivate {
             // Chama o auth-service para validar o token
             const { data } = await firstValueFrom(
                 this.httpService.post(
-                    `http://${authServer}/validaToken`,
+                    `http://${authServer}/auth/validaToken`,
                     {},
                     { headers: { token } },
                 ),
