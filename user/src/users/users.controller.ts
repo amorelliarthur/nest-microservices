@@ -1,6 +1,6 @@
 import {
     Controller, Get, Post, Patch, Delete,
-    Param, Body, Query, HttpCode, HttpStatus, UseGuards,
+    Param, Body, Query, HttpCode, HttpStatus, UseGuards, Request,
 } from '@nestjs/common';
 import { AuthGuard } from '../common/guards/auth.guard';
 import { AdminGuard } from '../common/guards/admin.guard';
@@ -30,6 +30,13 @@ export class UsersController {
     @UseGuards(AuthGuard, AdminGuard)
     findAll(@Query('nome') nome?: string) {
         return this.usersService.findAll(nome);
+    }
+
+    // Usuário autenticado busca os próprios dados
+    @Get('me')
+    @UseGuards(AuthGuard)
+    getMe(@Request() req: any) {
+        return this.usersService.findById(req.user.id);
     }
 
     @Get(':id')
