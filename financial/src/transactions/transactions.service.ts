@@ -68,7 +68,26 @@ export class TransactionsService {
                 account.balance = Number(account.balance) - Number(dto.amount);
                 target.balance = Number(target.balance) + Number(dto.amount);
 
+                await queryRunner.manager.save(Account, account);
                 await queryRunner.manager.save(Account, target);
+
+                // transação de saída — conta origem
+                transaction.status = TransactionStatus.COMPLETED;
+                await queryRunner.manager.save(Transaction, transaction);
+
+                // transação de entrada — conta destino
+                const incomingTransaction = queryRunner.manager.create(Transaction, {
+                    accountId: dto.targetAccountId,
+                    type: TransactionType.DEPOSIT, // aparece como depósito no extrato do destino
+                    amount: dto.amount,
+                    description: `Transferência recebida de ${dto.accountId}`,
+                    status: TransactionStatus.COMPLETED,
+                    targetAccountId: dto.accountId,
+                });
+                await queryRunner.manager.save(Transaction, incomingTransaction);
+
+                await queryRunner.commitTransaction();
+                return transaction;
             }
 
             transaction.status = TransactionStatus.COMPLETED;
@@ -80,11 +99,12 @@ export class TransactionsService {
             return transaction;
 
         } catch (err) {
-            // se qualquer operação falhar, desfaz tudo
-            await queryRunner.rollbackTransaction();
+            // só faz rollback se a transação ainda estiver ativa
+            if (queryRunner.isTransactionActive) {
+                await queryRunner.rollbackTransaction();
+            }
             throw err;
         } finally {
-            // sempre libera o queryRunner
             await queryRunner.release();
         }
     }
@@ -101,12 +121,18 @@ export class TransactionsService {
     async getBalance(accountId: string): Promise<{ balance: number }> {
         const result = await this.transactionRepo
             .createQueryBuilder('t')
-            .select('SUM(CASE WHEN t.type = :deposit THEN t.amount ELSE -t.amount END)', 'balance')
+            .select(
+                `SUM(CASE
+                    WHEN t.type IN (:...credits) THEN t.amount
+                    ELSE -t.amount
+                END)`,
+                'balance',
+            )
             .where('t.accountId = :accountId AND t.status = :status', {
                 accountId,
-                deposit: TransactionType.DEPOSIT,
                 status: TransactionStatus.COMPLETED,
             })
+            .setParameter('credits', [TransactionType.DEPOSIT])
             .getRawOne();
 
         return { balance: Number(result?.balance || 0) };
