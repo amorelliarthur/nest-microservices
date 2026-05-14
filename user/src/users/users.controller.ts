@@ -2,7 +2,6 @@ import {
     Controller, Get, Post, Patch, Delete,
     Param, Body, Query, HttpCode, HttpStatus, UseGuards, Request,
 } from '@nestjs/common';
-import { AuthGuard } from '../common/guards/auth.guard';
 import { AdminGuard } from '../common/guards/admin.guard';
 import { OwnerOrAdminGuard } from '../common/guards/owner-or-admin.guard';
 import { UsersService } from './users.service';
@@ -27,32 +26,33 @@ export class UsersController {
     }
 
     @Get()
-    @UseGuards(AuthGuard, AdminGuard)
+    @UseGuards(AdminGuard)
     findAll(@Query('nome') nome?: string) {
         return this.usersService.findAll(nome);
     }
 
     // Usuário autenticado busca os próprios dados
     @Get('me')
-    @UseGuards(AuthGuard)
     getMe(@Request() req: any) {
-        return this.usersService.findById(req.user.id);
+        // lê do header repassado pelo gateway
+        const userId = req.headers['x-user-id'];
+        return this.usersService.findById(userId);
     }
 
     @Get(':id')
-    @UseGuards(AuthGuard, AdminGuard)
+    @UseGuards(AdminGuard)
     findById(@Param('id') id: string) {
         return this.usersService.findById(id);
     }
 
     @Patch(':id')
-    @UseGuards(AuthGuard, OwnerOrAdminGuard)
+    @UseGuards(OwnerOrAdminGuard)
     update(@Param('id') id: string, @Body() dto: UpdateUserDto) {
         return this.usersService.update(id, dto);
     }
 
     @Delete(':id')
-    @UseGuards(AuthGuard, OwnerOrAdminGuard)
+    @UseGuards(OwnerOrAdminGuard)
     @HttpCode(HttpStatus.NO_CONTENT)
     remove(@Param('id') id: string) {
         return this.usersService.remove(id);

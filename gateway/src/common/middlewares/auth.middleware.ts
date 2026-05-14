@@ -46,6 +46,11 @@ export class AuthMiddleware implements NestMiddleware {
 
             // injeta o usuário na request
             (req as any).user = data;
+
+            // repassa os dados do usuário para os serviços internos
+            req.headers['x-user-id'] = data.id;
+            req.headers['x-user-role'] = data.role;
+            req.headers['x-user-email'] = data.email;
             next();
 
         } catch (err: any) {
