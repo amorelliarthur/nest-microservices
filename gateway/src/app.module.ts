@@ -12,10 +12,12 @@ export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
     const authServer = process.env.AUTH_SERVER;
     const userServer = process.env.USER_SERVER;
+    const financialServer = process.env.FINANCIAL_SERVER;
 
     const proxies: Array<{ path: string; target: string | undefined; rewrite: Record<string, string> }> = [
       { path: '/auth/*path', target: authServer, rewrite: { '^/auth': '/auth' } },
       { path: '/user/*path', target: userServer, rewrite: { '^/user': '/user' } },
+      { path: '/financial/*path', target: financialServer, rewrite: { '^/financial': '' } },
     ];
 
     for (const { path, target, rewrite } of proxies) {
