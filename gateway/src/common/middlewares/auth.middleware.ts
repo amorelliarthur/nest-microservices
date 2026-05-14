@@ -20,7 +20,7 @@ export class AuthMiddleware implements NestMiddleware {
     ) { }
 
     async use(req: Request, res: Response, next: NextFunction) {
-        console.log(`[AuthMiddleware] ${req.method} ${req.url}`);
+        // console.log(`[AuthMiddleware] ${req.method} ${req.url}`);
         const isPublic = PUBLIC_ROUTES.some(
             (route) => req.url === route.path && req.method === route.method,
         );
