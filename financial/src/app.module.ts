@@ -21,8 +21,7 @@ import { Transaction } from './transactions/entities/transaction.entity';
         password: config.get<string>('DB_PASS'),
         database: config.get<string>('DB_NAME'),
         entities: [Account, Transaction],
-        // cria/atualiza as tabelas automaticamente — só usa em dev!
-        synchronize: config.get<string>('NODE_ENV') === 'dev',
+        synchronize: false, // migrations controlam o schema agora
       }),
     }),
 
