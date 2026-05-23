@@ -6,24 +6,20 @@ import { ConfigModule } from '@nestjs/config';
 import { HttpModule } from '@nestjs/axios';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import { AuthMiddleware } from './common/middlewares/auth.middleware';
+import { RedisService } from './common/redis/redis.service';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     HttpModule,
   ],
-  providers: [AuthMiddleware],
+  providers: [AuthMiddleware, RedisService],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
     const authServer = process.env.AUTH_SERVER;
     const userServer = process.env.USER_SERVER;
     const financialServer = process.env.FINANCIAL_SERVER;
-
-    // Auth middleware aplicado em todas as rotas — ele mesmo decide o que é público
-    consumer
-      .apply(AuthMiddleware)
-      .forRoutes({ path: '*path', method: RequestMethod.ALL });
 
     const proxies: Array<{ path: string; target: string | undefined; rewrite: Record<string, string> }> = [
       { path: '/auth/*path', target: authServer, rewrite: { '^/auth': '/auth' } },
