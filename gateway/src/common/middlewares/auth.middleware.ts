@@ -10,6 +10,7 @@ import type { Request, Response, NextFunction } from 'express';
 const PUBLIC_ROUTES = [
     { path: '/auth/login', method: 'POST' },
     { path: '/user', method: 'POST' },
+    { path: '/auth/logout', method: 'POST' },
 ];
 
 const RATE_LIMIT = 100;

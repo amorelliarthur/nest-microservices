@@ -4,6 +4,7 @@ import { HttpModule } from '@nestjs/axios';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { RedisService } from '../common/redis/redis.service';
 import { StringValue } from 'ms';
 
 @Module({
@@ -33,6 +34,6 @@ import { StringValue } from 'ms';
         }),
     ],
     controllers: [AuthController],
-    providers: [AuthService],
+    providers: [AuthService, RedisService],
 })
 export class AuthModule { }

@@ -20,4 +20,10 @@ export class AuthController {
     validaToken(@Headers('token') token: string) {
         return this.authService.validaToken(token);
     }
+
+    @Post('logout')
+    @HttpCode(HttpStatus.NO_CONTENT)
+    logout(@Headers('token') token: string) {
+        return this.authService.logout(token);
+    }
 }
