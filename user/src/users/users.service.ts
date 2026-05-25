@@ -10,11 +10,15 @@ import * as bcrypt from 'bcrypt';
 import { User, UserDocument } from './schemas/user.schema';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { RedisService } from '../common/redis/redis.service';
+
+const CACHE_TTL = 300; // 5 minutos
 
 @Injectable()
 export class UsersService {
     constructor(
         @InjectModel(User.name) private userModel: Model<UserDocument>,
+        private readonly redisService: RedisService,
     ) { }
 
     async create(dto: CreateUserDto): Promise<UserDocument> {
@@ -51,8 +55,23 @@ export class UsersService {
     }
 
     async findById(id: string): Promise<UserDocument> {
+        const cacheKey = `user:${id}`;
+
+        // tenta buscar do cache primeiro
+        const cached = await this.redisService.get(cacheKey);
+        if (cached) {
+            console.log(`[Cache] HIT user:${id}`);
+            return JSON.parse(cached);
+        }
+
+        // se não tem cache, busca no MongoDB
+        console.log(`[Cache] MISS user:${id}`);
         const user = await this.userModel.findOne({ _id: id, deletedAt: null });
         if (!user) throw new NotFoundException('Usuário não encontrado');
+
+        // salva no cache para próximas requisições
+        await this.redisService.set(cacheKey, JSON.stringify(user.toObject()), CACHE_TTL);
+
         return user;
     }
 
@@ -81,6 +100,10 @@ export class UsersService {
         );
 
         if (!user) throw new NotFoundException('Usuário não encontrado');
+
+        // invalida o cache — dados foram alterados
+        await this.redisService.del(`user:${id}`);
+        console.log(`[Cache] INVALIDATED user:${id}`);
         return user;
     }
 
@@ -93,5 +116,9 @@ export class UsersService {
         );
 
         if (!user) throw new NotFoundException('Usuário não encontrado');
+
+        // invalida o cache — usuário foi deletado
+        await this.redisService.del(`user:${id}`);
+        console.log(`[Cache] INVALIDATED user:${id}`);
     }
 }
