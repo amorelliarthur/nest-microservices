@@ -6,6 +6,7 @@ import { Repository, DataSource } from 'typeorm';
 import { Transaction, TransactionStatus, TransactionType } from './entities/transaction.entity';
 import { Account } from '../accounts/entities/account.entity';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
+import { QueueService } from '../common/queue/queue.service';
 
 @Injectable()
 export class TransactionsService {
@@ -16,9 +17,18 @@ export class TransactionsService {
         private readonly accountRepo: Repository<Account>,
         // DataSource é usado para transações atômicas
         private readonly dataSource: DataSource,
+        private readonly queueService: QueueService,
     ) { }
 
-    async create(dto: CreateTransactionDto): Promise<Transaction> {
+    // enfileira e retorna imediatamente
+    async create(dto: CreateTransactionDto): Promise<{ jobId: string; status: string }> {
+        const jobId = await this.queueService.enqueueTransaction(dto);
+        console.log(`[Queue] transação enfileirada — job ${jobId}`);
+        return { jobId, status: TransactionStatus.PENDING };
+    }
+
+    // chamado pelo worker em background
+    async process(dto: CreateTransactionDto): Promise<Transaction> {
         // queryRunner é o mecanismo de transação do TypeORM
         const queryRunner = this.dataSource.createQueryRunner();
         await queryRunner.connect();
