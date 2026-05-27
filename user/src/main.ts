@@ -1,14 +1,30 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
+import { Transport, MicroserviceOptions } from '@nestjs/microservices';
 import { AppModule } from './app.module';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  // conecta ao RabbitMQ como consumidor
+  app.connectMicroservice<MicroserviceOptions>({
+    transport: Transport.RMQ,
+    options: {
+      urls: [`amqp://${process.env.RABBITMQ_HOST || 'localhost'}:5672`],
+      queue: 'transactions_queue',
+      queueOptions: { durable: true },
+    },
+  });
+
   // Habilita validação global via class-validator em todos os endpoints
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   app.useGlobalInterceptors(new LoggingInterceptor());
+
+  // inicia HTTP e microservice juntos
+  await app.startAllMicroservices();
+  console.log('[RabbitMQ] microservice consumer iniciado');
+
 
   const port = process.env.PORTA || 3000;
   await app.listen(port);

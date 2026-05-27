@@ -7,6 +7,8 @@ import { Transaction, TransactionStatus, TransactionType } from './entities/tran
 import { Account } from '../accounts/entities/account.entity';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { QueueService } from '../common/queue/queue.service';
+import { RabbitMQService } from '../common/rabbitmq/rabbitmq.service';
+
 
 @Injectable()
 export class TransactionsService {
@@ -18,6 +20,8 @@ export class TransactionsService {
         // DataSource é usado para transações atômicas
         private readonly dataSource: DataSource,
         private readonly queueService: QueueService,
+        private readonly rabbitMQService: RabbitMQService,
+
     ) { }
 
     // enfileira e retorna imediatamente
@@ -97,6 +101,14 @@ export class TransactionsService {
                 await queryRunner.manager.save(Transaction, incomingTransaction);
 
                 await queryRunner.commitTransaction();
+
+                await this.rabbitMQService.publish('transaction.completed', {
+                    userId: account.userId,
+                    accountId: dto.accountId,
+                    type: dto.type,
+                    amount: dto.amount,
+                });
+
                 return transaction;
             }
 
@@ -106,6 +118,14 @@ export class TransactionsService {
 
             // confirma todas as operações de uma vez — atômico
             await queryRunner.commitTransaction();
+
+            await this.rabbitMQService.publish('transaction.completed', {
+                userId: account.userId,
+                accountId: dto.accountId,
+                type: dto.type,
+                amount: dto.amount,
+            });
+
             return transaction;
 
         } catch (err) {

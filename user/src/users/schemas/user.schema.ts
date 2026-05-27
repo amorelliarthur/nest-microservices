@@ -22,6 +22,10 @@ export class User {
 
     @Prop({ default: null })
     deletedAt?: Date;
+
+    // Evento RabbitMQ quando uma transação é concluída
+    @Prop({ default: null })
+    lastTransactionAt?: Date;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
