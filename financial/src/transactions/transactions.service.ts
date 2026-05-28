@@ -1,5 +1,6 @@
 import {
     Injectable, NotFoundException, BadRequestException,
+    ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
@@ -25,7 +26,21 @@ export class TransactionsService {
     ) { }
 
     // enfileira e retorna imediatamente
-    async create(dto: CreateTransactionDto): Promise<{ jobId: string; status: string }> {
+    async create(dto: CreateTransactionDto, requestUserId: string, requestUserRole: string,): Promise<{ jobId: string; status: string }> {
+
+        // valida se o usuário logado é dono da conta origem
+        if (requestUserRole !== 'ADMIN') {
+            const account = await this.accountRepo.findOne({
+                where: { id: dto.accountId, active: true },
+            });
+
+            if (!account) throw new NotFoundException('Conta não encontrada');
+
+            if (account.userId !== requestUserId) {
+                throw new ForbiddenException('Você não tem permissão para movimentar esta conta');
+            }
+        }
+
         const jobId = await this.queueService.enqueueTransaction(dto);
         console.log(`[Queue] transação enfileirada — job ${jobId}`);
         return { jobId, status: TransactionStatus.PENDING };

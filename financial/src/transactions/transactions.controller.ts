@@ -1,6 +1,7 @@
-import { Controller, Get, Post, Param, Body, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Param, Body, HttpCode, HttpStatus, Req } from '@nestjs/common';
 import { TransactionsService } from './transactions.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
+import express from 'express';
 
 @Controller('transactions')
 export class TransactionsController {
@@ -8,8 +9,10 @@ export class TransactionsController {
 
     @Post()
     @HttpCode(HttpStatus.CREATED)
-    create(@Body() dto: CreateTransactionDto) {
-        return this.transactionsService.create(dto);
+    create(@Body() dto: CreateTransactionDto, @Req() req: express.Request) {
+        const userId = req.headers['x-user-id'] as string;
+        const userRole = req.headers['x-user-role'] as string;
+        return this.transactionsService.create(dto, userId, userRole);
     }
 
     @Get('account/:accountId')
