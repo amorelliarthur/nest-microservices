@@ -7,6 +7,7 @@ import { AdminGuard } from '../common/guards/admin.guard';
 import { OwnerOrAdminGuard } from '../common/guards/owner-or-admin.guard';
 import { RedisService } from '../common/redis/redis.service';
 import { TransactionConsumer } from '../common/rabbitmq/transaction.consumer';
+import { RabbitMQService } from '../common/rabbitmq/rabbitmq.service';
 
 
 @Module({
@@ -15,7 +16,7 @@ import { TransactionConsumer } from '../common/rabbitmq/transaction.consumer';
         MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
     ],
     controllers: [UsersController, TransactionConsumer],
-    providers: [UsersService, AdminGuard, OwnerOrAdminGuard, RedisService],
+    providers: [UsersService, AdminGuard, OwnerOrAdminGuard, RedisService, RabbitMQService],
     exports: [UsersService], // exporta para uso em outros módulos se necessário
 })
 export class UsersModule { }

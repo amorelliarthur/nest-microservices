@@ -4,6 +4,10 @@ export class CreateTables1779215751116 implements MigrationInterface {
     name = 'CreateTables1779215751116'
 
     public async up(queryRunner: QueryRunner): Promise<void> {
+        await queryRunner.query(`CREATE TYPE "public"."transactions_type_enum" AS ENUM('DEPOSIT', 'WITHDRAWAL', 'TRANSFER')`);
+        await queryRunner.query(`CREATE TYPE "public"."transactions_status_enum" AS ENUM('PENDING', 'COMPLETED', 'FAILED')`);
+        await queryRunner.query(`CREATE TYPE "public"."accounts_type_enum" AS ENUM('CHECKING', 'SAVINGS')`);
+
         await queryRunner.query(`CREATE TABLE "transactions" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "account_id" uuid NOT NULL, "type" "public"."transactions_type_enum" NOT NULL, "amount" numeric(10,2) NOT NULL, "description" character varying, "status" "public"."transactions_status_enum" NOT NULL DEFAULT 'PENDING', "target_account_id" character varying, "created_at" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "PK_a219afd8dd77ed80f5a862f1db9" PRIMARY KEY ("id"))`);
         await queryRunner.query(`CREATE INDEX "IDX_b9d2f8434bdcdf20f2a829fe77" ON "transactions" ("account_id", "created_at") `);
         await queryRunner.query(`CREATE TABLE "accounts" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "user_id" character varying NOT NULL, "type" "public"."accounts_type_enum" NOT NULL DEFAULT 'CHECKING', "balance" numeric(10,2) NOT NULL DEFAULT '0', "active" boolean NOT NULL DEFAULT true, "created_at" TIMESTAMP NOT NULL DEFAULT now(), "updated_at" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "PK_5a7a02c20412299d198e097a8fe" PRIMARY KEY ("id"))`);
@@ -15,6 +19,9 @@ export class CreateTables1779215751116 implements MigrationInterface {
         await queryRunner.query(`DROP TABLE "accounts"`);
         await queryRunner.query(`DROP INDEX "public"."IDX_b9d2f8434bdcdf20f2a829fe77"`);
         await queryRunner.query(`DROP TABLE "transactions"`);
-    }
 
+        await queryRunner.query(`DROP TYPE "public"."accounts_type_enum"`);
+        await queryRunner.query(`DROP TYPE "public"."transactions_status_enum"`);
+        await queryRunner.query(`DROP TYPE "public"."transactions_type_enum"`);
+    }
 }

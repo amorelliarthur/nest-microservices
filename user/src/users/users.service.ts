@@ -11,6 +11,7 @@ import { User, UserDocument } from './schemas/user.schema';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { RedisService } from '../common/redis/redis.service';
+import { RabbitMQService } from '../common/rabbitmq/rabbitmq.service';
 
 const CACHE_TTL = 300; // 5 minutos
 
@@ -19,6 +20,7 @@ export class UsersService {
     constructor(
         @InjectModel(User.name) private userModel: Model<UserDocument>,
         private readonly redisService: RedisService,
+        private readonly rabbitMQService: RabbitMQService,
     ) { }
 
     async create(dto: CreateUserDto): Promise<UserDocument> {
@@ -33,14 +35,25 @@ export class UsersService {
 
         const senhaHash = await bcrypt.hash(dto.senha, 10);
 
+        let user: UserDocument;
+
         // Deletado: reativa com os novos dados
         if (existe && existe.deletedAt) {
             existe.set({ ...dto, senha: senhaHash, deletedAt: null });
-            return existe.save();
+            user = await existe.save();
+        } else {
+            // Novo usuário
+            user = await new this.userModel({ ...dto, senha: senhaHash, deletedAt: null }).save();
         }
 
-        // Novo usuário
-        return new this.userModel({ ...dto, senha: senhaHash, deletedAt: null }).save();
+        // publica evento — financial-service vai criar a conta
+        await this.rabbitMQService.publish('user.created', {
+            userId: user._id.toString(),
+            nome: user.nome,
+            email: user.email,
+        });
+
+        return user;
     }
 
     async findAll(nome?: string): Promise<UserDocument[]> {
