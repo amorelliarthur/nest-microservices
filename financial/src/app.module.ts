@@ -29,4 +29,4 @@ import { Transaction } from './transactions/entities/transaction.entity';
     TransactionsModule,
   ],
 })
-export class AppModule { }
+export class AppModule {}

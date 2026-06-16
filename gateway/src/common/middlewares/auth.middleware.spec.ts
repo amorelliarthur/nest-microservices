@@ -36,7 +36,10 @@ describe('AuthMiddleware', () => {
       providers: [
         AuthMiddleware,
         { provide: HttpService, useValue: { post: jest.fn() } },
-        { provide: ConfigService, useValue: { get: jest.fn().mockReturnValue('http://auth:3001') } },
+        {
+          provide: ConfigService,
+          useValue: { get: jest.fn().mockReturnValue('http://auth:3001') },
+        },
         {
           provide: RedisService,
           useValue: { increment: jest.fn(), expire: jest.fn(), ttl: jest.fn() },
@@ -66,8 +69,13 @@ describe('AuthMiddleware', () => {
 
       await middleware.use(req, res, next);
 
-      expect(redisService.increment).toHaveBeenCalledWith('rate_limit:127.0.0.1');
-      expect(redisService.expire).toHaveBeenCalledWith('rate_limit:127.0.0.1', 60);
+      expect(redisService.increment).toHaveBeenCalledWith(
+        'rate_limit:127.0.0.1',
+      );
+      expect(redisService.expire).toHaveBeenCalledWith(
+        'rate_limit:127.0.0.1',
+        60,
+      );
       expect(next).toHaveBeenCalled();
     });
 
@@ -94,7 +102,10 @@ describe('AuthMiddleware', () => {
 
       expect(res.status).toHaveBeenCalledWith(429);
       expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({ statusCode: 429, message: expect.stringContaining('35') }),
+        expect.objectContaining({
+          statusCode: 429,
+          message: expect.stringContaining('35'),
+        }),
       );
       expect(next).not.toHaveBeenCalled();
       // nem deveria chegar a verificar autenticação
@@ -112,7 +123,9 @@ describe('AuthMiddleware', () => {
 
       await middleware.use(req, res, next);
 
-      expect(redisService.increment).toHaveBeenCalledWith('rate_limit:203.0.113.5');
+      expect(redisService.increment).toHaveBeenCalledWith(
+        'rate_limit:203.0.113.5',
+      );
     });
   });
 
@@ -121,16 +134,19 @@ describe('AuthMiddleware', () => {
       ['/auth/login', 'POST'],
       ['/user', 'POST'],
       ['/auth/logout', 'POST'],
-    ])('deve chamar next() sem validar token para %s %s', async (path, method) => {
-      const req = buildRequest({ url: path, method });
-      const res = buildResponse();
-      const next = jest.fn();
+    ])(
+      'deve chamar next() sem validar token para %s %s',
+      async (path, method) => {
+        const req = buildRequest({ url: path, method });
+        const res = buildResponse();
+        const next = jest.fn();
 
-      await middleware.use(req, res, next);
+        await middleware.use(req, res, next);
 
-      expect(httpService.post).not.toHaveBeenCalled();
-      expect(next).toHaveBeenCalled();
-    });
+        expect(httpService.post).not.toHaveBeenCalled();
+        expect(next).toHaveBeenCalled();
+      },
+    );
 
     it('não deve tratar como pública uma rota com mesmo path mas método diferente', async () => {
       // /user é pública apenas para POST — um GET não deve passar direto
@@ -209,12 +225,16 @@ describe('AuthMiddleware', () => {
       });
       const res = buildResponse();
       const next = jest.fn();
-      httpService.post.mockReturnValue(throwError(() => new Error('ECONNREFUSED')));
+      httpService.post.mockReturnValue(
+        throwError(() => new Error('ECONNREFUSED')),
+      );
 
       await middleware.use(req, res, next);
 
       expect(res.status).toHaveBeenCalledWith(503);
-      expect(res.json).toHaveBeenCalledWith({ message: 'Auth service indisponível' });
+      expect(res.json).toHaveBeenCalledWith({
+        message: 'Auth service indisponível',
+      });
       expect(next).not.toHaveBeenCalled();
     });
   });

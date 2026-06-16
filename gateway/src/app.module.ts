@@ -1,7 +1,12 @@
 import * as dotenv from 'dotenv';
 dotenv.config(); // carrega o .env antes de qualquer coisa
 
-import { MiddlewareConsumer, Module, NestModule, RequestMethod } from '@nestjs/common';
+import {
+  MiddlewareConsumer,
+  Module,
+  NestModule,
+  RequestMethod,
+} from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { HttpModule } from '@nestjs/axios';
 import { createProxyMiddleware } from 'http-proxy-middleware';
@@ -9,10 +14,7 @@ import { AuthMiddleware } from './common/middlewares/auth.middleware';
 import { RedisService } from './common/redis/redis.service';
 
 @Module({
-  imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
-    HttpModule,
-  ],
+  imports: [ConfigModule.forRoot({ isGlobal: true }), HttpModule],
   providers: [AuthMiddleware, RedisService],
 })
 export class AppModule implements NestModule {
@@ -21,15 +23,33 @@ export class AppModule implements NestModule {
     const userServer = process.env.USER_SERVER;
     const financialServer = process.env.FINANCIAL_SERVER;
 
-    const proxies: Array<{ path: string; target: string | undefined; rewrite: Record<string, string> }> = [
-      { path: '/auth/*path', target: authServer, rewrite: { '^/auth': '/auth' } },
-      { path: '/user/*path', target: userServer, rewrite: { '^/user': '/user' } },
-      { path: '/financial/*path', target: financialServer, rewrite: { '^/financial': '' } },
+    const proxies: Array<{
+      path: string;
+      target: string | undefined;
+      rewrite: Record<string, string>;
+    }> = [
+      {
+        path: '/auth/*path',
+        target: authServer,
+        rewrite: { '^/auth': '/auth' },
+      },
+      {
+        path: '/user/*path',
+        target: userServer,
+        rewrite: { '^/user': '/user' },
+      },
+      {
+        path: '/financial/*path',
+        target: financialServer,
+        rewrite: { '^/financial': '' },
+      },
     ];
 
     for (const { path, target, rewrite } of proxies) {
       if (!target) {
-        console.warn(`[Gateway] Variável de ambiente ausente para rota ${path} — proxy ignorado`);
+        console.warn(
+          `[Gateway] Variável de ambiente ausente para rota ${path} — proxy ignorado`,
+        );
         continue;
       }
 
@@ -45,9 +65,10 @@ export class AppModule implements NestModule {
         .forRoutes({ path, method: RequestMethod.ALL });
 
       // Casa a rota raiz: /user, /auth
-      consumer
-        .apply(proxyInstance)
-        .forRoutes({ path: path.replace('/*path', ''), method: RequestMethod.ALL });
+      consumer.apply(proxyInstance).forRoutes({
+        path: path.replace('/*path', ''),
+        method: RequestMethod.ALL,
+      });
     }
   }
 }

@@ -7,23 +7,23 @@ export const TRANSACTION_QUEUE = 'transactions';
 
 @Injectable()
 export class QueueService implements OnModuleDestroy {
-    private readonly queue: Queue;
+  private readonly queue: Queue;
 
-    constructor(private readonly redisService: RedisService) {
-        this.queue = new Queue(TRANSACTION_QUEUE, {
-            connection: this.redisService.getConnectionOptions(),
-        });
-    }
+  constructor(private readonly redisService: RedisService) {
+    this.queue = new Queue(TRANSACTION_QUEUE, {
+      connection: this.redisService.getConnectionOptions(),
+    });
+  }
 
-    async enqueueTransaction(dto: CreateTransactionDto): Promise<string> {
-        const job = await this.queue.add('process-transaction', dto, {
-            attempts: 3,
-            backoff: { type: 'exponential', delay: 1000 },
-        });
-        return job.id!;
-    }
+  async enqueueTransaction(dto: CreateTransactionDto): Promise<string> {
+    const job = await this.queue.add('process-transaction', dto, {
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 1000 },
+    });
+    return job.id!;
+  }
 
-    onModuleDestroy() {
-        this.queue.close();
-    }
+  onModuleDestroy() {
+    this.queue.close();
+  }
 }
