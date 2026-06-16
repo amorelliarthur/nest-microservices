@@ -6,19 +6,24 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Observable, tap } from 'rxjs';
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
+
+type LoggableData = Record<string, unknown> | undefined;
 
 @Injectable()
 export class LoggingInterceptor implements NestInterceptor {
   private readonly logger = new Logger('HTTP');
   private readonly isDev = process.env.NODE_ENV === 'dev';
 
-  intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
+  intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     const request = context.switchToHttp().getRequest<Request>();
     const response = context.switchToHttp().getResponse<Response>();
-    const { method, url, headers, body } = request;
+    const method = request.method;
+    const url = request.url;
+    const headers = request.headers;
+    const body = request.body as LoggableData;
     const start = Date.now();
 
     return next.handle().pipe(
@@ -45,11 +50,11 @@ export class LoggingInterceptor implements NestInterceptor {
   }
 
   // Mascara campos sensíveis
-  private maskSensitive(data: any): any {
-    if (!data || typeof data !== 'object') return data;
+  private maskSensitive(data: LoggableData): Record<string, unknown> {
+    if (!data || typeof data !== 'object') return {};
 
     const sensitive = ['senha', 'token', 'authorization', 'cookie', 'cpf'];
-    const masked = { ...data };
+    const masked: Record<string, unknown> = { ...data };
 
     for (const key of Object.keys(masked)) {
       if (sensitive.includes(key.toLowerCase())) {
@@ -64,8 +69,8 @@ export class LoggingInterceptor implements NestInterceptor {
     url: string,
     status: number,
     duration: number,
-    headers: any,
-    body: any,
+    headers: LoggableData,
+    body: LoggableData,
   ) {
     const logPath = path.join(process.cwd(), 'app.log');
     const entry =
