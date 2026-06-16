@@ -16,13 +16,15 @@ Arquitetura de microserviços em NestJS com gerenciamento de usuários e serviç
 - API Gateway com proxy reverso e autenticação centralizada
 - Autenticação com JWT e logout com blacklist
 - Autorização por níveis (USER / ADMIN)
-- Comunicação entre serviços via HTTP
+- Comunicação entre serviços via HTTP e eventos assíncronos (RabbitMQ)
 - Validação de dados com class-validator
 - Logging de requisições HTTP
 - Persistência com MongoDB (Mongoose) e PostgreSQL (TypeORM)
 - Migrations com TypeORM
 - Redis para cache, sessão, rate limiting e filas assíncronas
 - Filas de transações com BullMQ
+- Event-Driven Architecture entre user e financial services com RabbitMQ
+- Testes unitários com Jest
 
 ---
 
@@ -32,10 +34,10 @@ O sistema é dividido em microserviços independentes:
 
 - **api-gateway** → ponto de entrada da aplicação (roteamento, proxy, autenticação e rate limiting)
 - **auth-service** → autenticação, geração/validação de JWT e blacklist de tokens
-- **user-service** → gerenciamento de usuários com cache Redis
-- **financial-service** → contas e transações financeiras com fila assíncrona
+- **user-service** → gerenciamento de usuários com cache Redis, publica e consome eventos via RabbitMQ
+- **financial-service** → contas e transações financeiras com fila assíncrona (BullMQ), publica e consome eventos via RabbitMQ
 
-A comunicação ocorre via **HTTP REST**, centralizada pelo gateway.
+A comunicação síncrona ocorre via **HTTP REST**, centralizada pelo gateway. A comunicação entre user-service e financial-service é **assíncrona via RabbitMQ** (Event-Driven Architecture), sem chamadas HTTP diretas entre os dois.
 
 ```
 [ Client ]
@@ -60,6 +62,14 @@ A comunicação ocorre via **HTTP REST**, centralizada pelo gateway.
                      |
                      v
                  PostgreSQL
+
+  Eventos assíncronos via RabbitMQ:
+
+  [ User Service ] --user.created--> [ Financial Service ]
+       (publica)                          (consome → cria conta CHECKING)
+
+  [ Financial Service ] --transaction.completed--> [ User Service ]
+       (publica)                                       (consome → atualiza lastTransactionAt)
 ```
 
 ---
@@ -73,6 +83,7 @@ A comunicação ocorre via **HTTP REST**, centralizada pelo gateway.
 - MongoDB / Mongoose
 - PostgreSQL / TypeORM
 - Redis / ioredis / BullMQ
+- RabbitMQ / amqplib (@nestjs/microservices)
 - class-validator / class-transformer
 - Docker
 
@@ -89,7 +100,8 @@ src/
 │   ├── interceptors/   → logging HTTP
 │   ├── middlewares/    → autenticação (gateway)
 │   ├── redis/          → RedisService
-│   └── queue/          → QueueService + Worker (financial)
+│   ├── queue/          → QueueService + Worker (financial, BullMQ)
+│   └── rabbitmq/        → RabbitMQService (publisher) + Consumers (publica/consome eventos)
 ├── <dominio>/
 │   ├── dto/            → validação de entrada
 │   ├── schemas/        → modelos Mongoose (MongoDB)
@@ -210,9 +222,9 @@ DELETE /user/:id
 
 **TTL:** 5 minutos. Cache invalidado automaticamente em updates e deletes.
 
-## 4. Filas Assíncronas — Financial Service
+## 4. Fila Interna (BullMQ) — Financial Service
 
-Processa transações financeiras em background, retornando resposta imediata ao cliente.
+Processa transações financeiras em background, retornando resposta imediata ao cliente. Essa fila é interna ao financial-service — não envolve comunicação com outros serviços.
 
 ```
 POST /transactions
@@ -225,6 +237,39 @@ Background (Worker):
   → salva com status: 'COMPLETED'
   → em caso de falha: tenta mais 2 vezes (backoff exponencial: 1s, 2s, 4s)
 ```
+
+---
+
+# RabbitMQ — Event-Driven Architecture entre serviços
+
+Enquanto o BullMQ resolve o processamento assíncrono **dentro** do financial-service, o RabbitMQ resolve a comunicação **entre** user-service e financial-service — sem nenhuma chamada HTTP direta entre eles. Cada serviço publica eventos sem saber quem vai consumir, e reage a eventos de outros serviços de forma independente.
+
+Duas filas, cada uma com um sentido de comunicação:
+
+## 1. `users_queue` — user-service publica, financial-service consome
+
+```
+POST /user (cadastro)
+  → user-service cria o usuário no MongoDB
+  → publica o evento "user.created" { userId, nome, email }
+  → retorna 201 imediatamente
+
+financial-service consome "user.created":
+  → cria automaticamente uma conta CHECKING para esse userId
+  → se a conta já existir, ignora o erro sem quebrar o consumer
+```
+
+## 2. `transactions_queue` — financial-service publica, user-service consome
+
+```
+Worker do BullMQ conclui o processamento de uma transação
+  → financial-service publica o evento "transaction.completed" { userId, accountId, type, amount }
+
+user-service consome "transaction.completed":
+  → atualiza o campo lastTransactionAt do usuário no MongoDB
+```
+
+Painel de administração do RabbitMQ disponível em `http://localhost:15672` (usuário/senha padrão: `guest`/`guest`).
 
 ---
 
@@ -268,6 +313,7 @@ MONGODB_PORT=27017
 MONGODB_NAME=user
 REDIS_HOST=localhost
 REDIS_PORT=6379
+RABBITMQ_HOST=localhost
 NODE_ENV=dev
 ```
 
@@ -283,6 +329,7 @@ DB_PASS=admin
 DB_NAME=financeiro
 REDIS_HOST=localhost
 REDIS_PORT=6379
+RABBITMQ_HOST=localhost
 NODE_ENV=dev
 ```
 
@@ -308,7 +355,7 @@ cd ../gateway && npm install
 
 ---
 
-# Banco de dados e Redis
+# Banco de dados, Redis e RabbitMQ
 
 ### MongoDB (user-service)
 
@@ -331,6 +378,15 @@ docker run --name postgres \
 
 ```bash
 docker run --name redis -p 6379:6379 -d redis
+```
+
+### RabbitMQ (user, financial)
+
+```bash
+docker run --name rabbitmq \
+  -p 5672:5672 \
+  -p 15672:15672 \
+  -d rabbitmq:3-management
 ```
 
 ### Migrations (financial-service)
@@ -509,9 +565,30 @@ Formato padrão das respostas de erro:
 
 ---
 
-# Roadmap
+# Testes
 
-- [ ] Testes unitários com Jest
-- [ ] Documentação com Swagger
-- [ ] Docker Compose
-- [ ] Monitor Service
+O projeto possui testes unitários com Jest cobrindo a lógica de negócio dos serviços, com foco em regras de domínio, condicionais críticas e side-effects relevantes (banco, cache, fila).
+
+| Serviço | Cobertura |
+|---------|-----------|
+| `auth` | Login (sucesso, credenciais inválidas, serviço indisponível), validação de token (válido, ausente, blacklist, inválido), logout |
+| `user` | Criação (novo, CPF/email duplicado, reativação de deletado), busca por ID com cache (HIT/MISS), autenticação, atualização e remoção (soft delete) |
+| `financial` | Transações (depósito, saque, transferência, saldo insuficiente), contas (criação, conflito de tipo duplicado, busca, desativação) |
+| `gateway` | Rate limiting (incremento, TTL, bloqueio em 429), rotas públicas vs protegidas, autenticação (token válido/inválido/ausente, serviço indisponível) |
+
+Rodar os testes de um serviço:
+
+```bash
+cd <servico>
+npm run test
+```
+
+Rodar um arquivo de teste específico:
+
+```bash
+npm run test <nome-do-arquivo>
+```
+
+Guards simples (verificação de role ou ownership por comparação direta) e wrappers finos sobre bibliotecas externas (RabbitMQ, BullMQ) não possuem testes dedicados — a cobertura prioriza onde existe decisão de negócio real.
+
+---
