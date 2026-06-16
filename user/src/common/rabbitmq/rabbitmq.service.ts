@@ -20,12 +20,15 @@ export class RabbitMQService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  async publish(pattern: string, data: any): Promise<void> {
+  async publish(pattern: string, data: unknown): Promise<void> {
+    await Promise.resolve();
+
     try {
       this.client.emit(pattern, data);
       console.log(`[RabbitMQ] evento publicado: ${pattern}`);
-    } catch (err: any) {
-      console.error('[RabbitMQ] erro ao publicar:', err.message);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'erro desconhecido';
+      console.error('[RabbitMQ] erro ao publicar:', message);
     }
   }
 
