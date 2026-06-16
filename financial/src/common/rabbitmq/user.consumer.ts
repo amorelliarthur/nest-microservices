@@ -5,7 +5,7 @@ import { AccountType } from '../../accounts/entities/account.entity';
 
 @Controller()
 export class UserConsumer {
-  constructor(private readonly accountsService: AccountsService) { }
+  constructor(private readonly accountsService: AccountsService) {}
 
   @EventPattern('user.created')
   async handleUserCreated(

@@ -33,6 +33,6 @@ export class TransactionWorker implements OnModuleInit, OnModuleDestroy {
   }
 
   onModuleDestroy() {
-    this.worker.close();
+    void this.worker.close();
   }
 }

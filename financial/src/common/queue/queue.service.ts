@@ -24,6 +24,6 @@ export class QueueService implements OnModuleDestroy {
   }
 
   onModuleDestroy() {
-    this.queue.close();
+    void this.queue.close();
   }
 }
