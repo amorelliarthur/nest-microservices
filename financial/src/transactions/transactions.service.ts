@@ -63,11 +63,14 @@ export class TransactionsService {
     await queryRunner.startTransaction();
 
     try {
-      const account = await queryRunner.manager.findOne(Account, {
-        where: { id: dto.accountId, active: true },
-        // LOCK garante que nenhuma outra transação altere o saldo ao mesmo tempo
-        lock: { mode: 'pessimistic_write' },
-      });
+      const account: Account | null = await queryRunner.manager.findOne(
+        Account,
+        {
+          where: { id: dto.accountId, active: true },
+          // LOCK garante que nenhuma outra transação altere o saldo ao mesmo tempo
+          lock: { mode: 'pessimistic_write' },
+        },
+      );
 
       if (!account) throw new NotFoundException('Conta não encontrada');
 
@@ -98,10 +101,13 @@ export class TransactionsService {
           throw new BadRequestException('Saldo insuficiente');
         }
 
-        const target = await queryRunner.manager.findOne(Account, {
-          where: { id: dto.targetAccountId, active: true },
-          lock: { mode: 'pessimistic_write' },
-        });
+        const target: Account | null = await queryRunner.manager.findOne(
+          Account,
+          {
+            where: { id: dto.targetAccountId, active: true },
+            lock: { mode: 'pessimistic_write' },
+          },
+        );
 
         if (!target)
           throw new NotFoundException('Conta destino não encontrada');
@@ -175,21 +181,22 @@ export class TransactionsService {
 
   // saldo calculado via query SQL pura — exemplo de query avançada
   async getBalance(accountId: string): Promise<{ balance: number }> {
-    const result = await this.transactionRepo
-      .createQueryBuilder('t')
-      .select(
-        `SUM(CASE
+    const result: { balance: string | null } | undefined =
+      await this.transactionRepo
+        .createQueryBuilder('t')
+        .select(
+          `SUM(CASE
                     WHEN t.type IN (:...credits) THEN t.amount
                     ELSE -t.amount
                 END)`,
-        'balance',
-      )
-      .where('t.accountId = :accountId AND t.status = :status', {
-        accountId,
-        status: TransactionStatus.COMPLETED,
-      })
-      .setParameter('credits', [TransactionType.DEPOSIT])
-      .getRawOne();
+          'balance',
+        )
+        .where('t.accountId = :accountId AND t.status = :status', {
+          accountId,
+          status: TransactionStatus.COMPLETED,
+        })
+        .setParameter('credits', [TransactionType.DEPOSIT])
+        .getRawOne();
 
     return { balance: Number(result?.balance || 0) };
   }

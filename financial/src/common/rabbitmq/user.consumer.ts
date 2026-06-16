@@ -5,7 +5,7 @@ import { AccountType } from '../../accounts/entities/account.entity';
 
 @Controller()
 export class UserConsumer {
-  constructor(private readonly accountsService: AccountsService) {}
+  constructor(private readonly accountsService: AccountsService) { }
 
   @EventPattern('user.created')
   async handleUserCreated(
@@ -22,9 +22,10 @@ export class UserConsumer {
       console.log(
         `[RabbitMQ] conta CHECKING criada automaticamente para userId: ${data.userId}`,
       );
-    } catch (err: any) {
+    } catch (err: unknown) {
       // ConflictException se já existir conta — não deve quebrar o consumer
-      console.error(`[RabbitMQ] erro ao criar conta automática:`, err.message);
+      const message = err instanceof Error ? err.message : 'erro desconhecido';
+      console.error('[RabbitMQ] erro ao criar conta automática:', message);
     }
   }
 }
