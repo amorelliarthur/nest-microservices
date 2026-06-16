@@ -17,6 +17,7 @@ import { OwnerOrAdminGuard } from '../common/guards/owner-or-admin.guard';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import type { Request as ExpressRequest } from 'express';
 
 @Controller('user')
 export class UsersController {
@@ -43,9 +44,9 @@ export class UsersController {
 
   // Usuário autenticado busca os próprios dados
   @Get('me')
-  getMe(@Request() req: any) {
+  getMe(@Request() req: ExpressRequest) {
     // lê do header repassado pelo gateway
-    const userId = req.headers['x-user-id'];
+    const userId = req.headers['x-user-id'] as string;
     return this.usersService.findById(userId);
   }
 

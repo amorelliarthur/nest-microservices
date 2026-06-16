@@ -14,6 +14,18 @@ const PUBLIC_ROUTES = [
 const RATE_LIMIT = 100;
 const WINDOW_SEC = 60;
 
+// formato retornado pelo auth-service em /auth/validaToken
+interface ValidaTokenResponse {
+  id: string;
+  role: string;
+  email: string;
+}
+
+// estende o Request do Express para aceitar o usuário autenticado
+interface RequestWithUser extends Request {
+  user?: ValidaTokenResponse;
+}
+
 @Injectable()
 export class AuthMiddleware implements NestMiddleware {
   constructor(
@@ -22,7 +34,7 @@ export class AuthMiddleware implements NestMiddleware {
     private readonly redisService: RedisService,
   ) {}
 
-  async use(req: Request, res: Response, next: NextFunction) {
+  async use(req: RequestWithUser, res: Response, next: NextFunction) {
     // console.log(`[AuthMiddleware] ${req.method} ${req.url}`);
     // rate limit
     const ip =
@@ -63,7 +75,7 @@ export class AuthMiddleware implements NestMiddleware {
       const authServer = this.configService.get<string>('AUTH_SERVER');
 
       const { data } = await firstValueFrom(
-        this.httpService.post(
+        this.httpService.post<ValidaTokenResponse>(
           `${authServer}/auth/validaToken`,
           {},
           { headers: { token } },
@@ -71,15 +83,17 @@ export class AuthMiddleware implements NestMiddleware {
       );
 
       // injeta o usuário na request
-      (req as any).user = data;
+      req.user = data;
 
       // repassa os dados do usuário para os serviços internos
       req.headers['x-user-id'] = data.id;
       req.headers['x-user-role'] = data.role;
       req.headers['x-user-email'] = data.email;
       next();
-    } catch (err: any) {
-      if (err.response?.status === 401) {
+    } catch (err: unknown) {
+      const error = err as { response?: { status?: number } };
+
+      if (error.response?.status === 401) {
         res.status(401).json({ message: 'Token inválido' });
         return;
       }
