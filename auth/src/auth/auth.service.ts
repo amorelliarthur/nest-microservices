@@ -10,6 +10,21 @@ import { RedisService } from '../common/redis/redis.service';
 import { firstValueFrom } from 'rxjs';
 import { LoginDto } from './dto/login.dto';
 
+// formato retornado pelo user-service em /user/authenticate
+interface AuthenticatedUser {
+  _id: string;
+  email: string;
+  role: string;
+}
+
+// payload assinado/decodificado pelo JwtService
+interface JwtPayload {
+  id: string;
+  email: string;
+  role: string;
+  exp: number;
+}
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -25,7 +40,7 @@ export class AuthService {
     try {
       // Chama o user-service para autenticar
       const { data: user } = await firstValueFrom(
-        this.httpService.post(
+        this.httpService.post<AuthenticatedUser>(
           `http://${userServer}/user/authenticate`,
           { email: dto.email, senha: dto.senha },
           { timeout: 5000 },
@@ -40,9 +55,11 @@ export class AuthService {
       });
 
       return { user: user.email, token };
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const error = err as { response?: unknown };
+
       // Erro vindo do user-service (ex: senha inválida, não encontrado)
-      if (err.response) {
+      if (error.response) {
         throw new UnauthorizedException('Email ou senha inválidos');
       }
 
@@ -51,7 +68,7 @@ export class AuthService {
     }
   }
 
-  async validaToken(token: string) {
+  async validaToken(token: string): Promise<JwtPayload> {
     if (!token) {
       throw new UnauthorizedException('Token não fornecido');
     }
@@ -63,7 +80,7 @@ export class AuthService {
     }
 
     try {
-      return this.jwtService.verify(token);
+      return this.jwtService.verify<JwtPayload>(token);
     } catch {
       throw new UnauthorizedException('Token inválido');
     }
@@ -76,7 +93,7 @@ export class AuthService {
 
     try {
       // decodifica para pegar o tempo restante de expiração
-      const decoded = this.jwtService.verify(token);
+      const decoded = this.jwtService.verify<JwtPayload>(token);
       const now = Math.floor(Date.now() / 1000);
       const ttl = decoded.exp - now;
 
