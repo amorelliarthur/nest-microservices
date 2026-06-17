@@ -14,7 +14,8 @@ export class CreateUserDto {
   @Length(6, 100, { message: 'Senha deve ter no mínimo 6 caracteres' })
   senha!: string;
 
-  @Transform(({ value }) => value.replace(/\D/g, ''))
+  // remove a máscara do CPF (pontos e traço) antes da validação
+  @Transform(({ value }: { value: string }) => value.replace(/\D/g, ''))
   @IsCPF({ message: 'CPF inválido' })
   cpf!: string;
 }

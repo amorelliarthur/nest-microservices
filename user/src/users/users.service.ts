@@ -15,6 +15,11 @@ import { RabbitMQService } from '../common/rabbitmq/rabbitmq.service';
 
 const CACHE_TTL = 300; // 5 minutos
 
+interface UserFilter {
+  deletedAt: null;
+  nome?: { $regex: string; $options: string };
+}
+
 @Injectable()
 export class UsersService {
   constructor(
@@ -61,7 +66,7 @@ export class UsersService {
   }
 
   async findAll(nome?: string): Promise<UserDocument[]> {
-    const filtro: any = { deletedAt: null };
+    const filtro: UserFilter = { deletedAt: null };
 
     // Se enviou nome, busca por regex case-insensitive
     if (nome) {
@@ -78,7 +83,7 @@ export class UsersService {
     const cached = await this.redisService.get(cacheKey);
     if (cached) {
       console.log(`[Cache] HIT user:${id}`);
-      return JSON.parse(cached);
+      return JSON.parse(cached) as UserDocument;
     }
 
     // se não tem cache, busca no MongoDB
@@ -105,7 +110,8 @@ export class UsersService {
     if (!senhaValida) throw new UnauthorizedException('Credenciais inválidas');
 
     // Não retorna a senha para fora do serviço
-    const { senha: _, ...result } = user.toObject();
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { senha: _senha, ...result } = user.toObject();
     return result;
   }
 
