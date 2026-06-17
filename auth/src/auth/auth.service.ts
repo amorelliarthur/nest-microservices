@@ -18,7 +18,7 @@ interface AuthenticatedUser {
 }
 
 // payload assinado/decodificado pelo JwtService
-interface JwtPayload {
+export interface JwtPayload {
   id: string;
   email: string;
   role: string;
