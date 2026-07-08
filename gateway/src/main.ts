@@ -8,11 +8,13 @@ async function bootstrap() {
     bodyParser: false, // desabilita para o proxy funcionar corretamente
   });
 
-  // garante rate limit e auth em todas as rotas
+  // garante rate limit e auth em todas as rotas — exceto /metrics
   const authMiddleware = app.get(AuthMiddleware);
-  app.use((req: Request, res: Response, next: NextFunction) =>
-    authMiddleware.use(req, res, next),
-  );
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    // /metrics é endpoint de observabilidade: sem auth e sem rate limit
+    if (req.url === '/metrics') return next();
+    return authMiddleware.use(req, res, next);
+  });
 
   // Rota de health check
   app.getHttpAdapter().get('/test', (req: Request, res: Response) => {

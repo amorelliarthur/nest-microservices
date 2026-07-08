@@ -5,6 +5,7 @@ import { AccountsModule } from './accounts/accounts.module';
 import { TransactionsModule } from './transactions/transactions.module';
 import { Account } from './accounts/entities/account.entity';
 import { Transaction } from './transactions/entities/transaction.entity';
+import { MetricsModule } from './metrics/metrics.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { Transaction } from './transactions/entities/transaction.entity';
 
     AccountsModule,
     TransactionsModule,
+    MetricsModule,
   ],
 })
 export class AppModule {}
