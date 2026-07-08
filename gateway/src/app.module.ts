@@ -12,9 +12,14 @@ import { HttpModule } from '@nestjs/axios';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import { AuthMiddleware } from './common/middlewares/auth.middleware';
 import { RedisService } from './common/redis/redis.service';
+import { MetricsModule } from './metrics/metrics.module';
 
 @Module({
-  imports: [ConfigModule.forRoot({ isGlobal: true }), HttpModule],
+  imports: [
+    ConfigModule.forRoot({ isGlobal: true }),
+    HttpModule,
+    MetricsModule,
+  ],
   providers: [AuthMiddleware, RedisService],
 })
 export class AppModule implements NestModule {
