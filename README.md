@@ -4,6 +4,8 @@
 ![NestJS](https://img.shields.io/badge/nestjs-11-red)
 ![Architecture](https://img.shields.io/badge/architecture-microservices-orange)
 ![Redis](https://img.shields.io/badge/redis-enabled-red)
+![Prometheus](https://img.shields.io/badge/prometheus-enabled-orange)
+![Grafana](https://img.shields.io/badge/grafana-dashboards-yellow)
 ![License](https://img.shields.io/badge/license-MIT-lightgrey)
 
 Arquitetura de microserviços em NestJS com gerenciamento de usuários e serviço financeiro.
@@ -25,6 +27,7 @@ Arquitetura de microserviços em NestJS com gerenciamento de usuários e serviç
 - Filas de transações com BullMQ
 - Event-Driven Architecture entre user e financial services com RabbitMQ
 - Testes unitários com Jest
+- Observabilidade com Prometheus e Grafana (métricas de processo via prom-client)
 
 ---
 
@@ -85,6 +88,8 @@ A comunicação síncrona ocorre via **HTTP REST**, centralizada pelo gateway. A
 - Redis / ioredis / BullMQ
 - RabbitMQ / amqplib (@nestjs/microservices)
 - class-validator / class-transformer
+- Prometheus / prom-client
+- Grafana
 - Docker
 
 ---
@@ -273,6 +278,41 @@ Painel de administração do RabbitMQ disponível em `http://localhost:15672` (u
 
 ---
 
+# Observabilidade — Prometheus e Grafana
+
+Cada serviço expõe um endpoint `/metrics` usando `prom-client`, coletando
+métricas padrão do Node.js (CPU, memória, event loop, garbage collection).
+O Prometheus coleta essas métricas periodicamente e o Grafana as exibe em dashboards.
+
+## Arquitetura
+
+```
+[ user-service      :3000/metrics ]
+[ auth-service      :3001/metrics ]   ← Prometheus coleta a cada 15s
+[ api-gateway       :3002/metrics ]     via host.docker.internal
+[ financial-service :3004/metrics ]
+              |
+              v
+        [ Prometheus :9090 ]  → armazena as métricas
+              |
+              v
+        [ Grafana :3005 ]     → exibe os dashboards
+```
+
+Os serviços NestJS rodam em modo dev na máquina host, enquanto Prometheus e
+Grafana rodam em containers. Por isso o Prometheus acessa os serviços via
+`host.docker.internal` (com `extra_hosts: host-gateway` no Linux).
+
+## Acessos
+
+- **Prometheus:** `http://localhost:9090` (veja os targets em `/targets`)
+- **Grafana:** `http://localhost:3005` (login padrão: `admin` / `admin`)
+
+O dashboard utilizado é o **NodeJS Application Dashboard** (ID `11159`),
+importável diretamente pelo Grafana.
+
+---
+
 # Variáveis de ambiente
 
 Crie um arquivo `.env` em cada serviço.
@@ -355,41 +395,27 @@ cd ../gateway && npm install
 
 ---
 
-# Banco de dados, Redis e RabbitMQ
+# Infraestrutura (Docker Compose)
 
-### MongoDB (user-service)
-
-```bash
-docker run --name mongodb -p 27017:27017 -d mongo
-```
-
-### PostgreSQL (financial-service)
+Toda a infraestrutura (MongoDB, PostgreSQL, Redis, RabbitMQ, Prometheus e Grafana)
+sobe com um único comando, a partir da raiz do projeto:
 
 ```bash
-docker run --name postgres \
-  -e POSTGRES_USER=admin \
-  -e POSTGRES_PASSWORD=admin \
-  -e POSTGRES_DB=financeiro \
-  -p 5432:5432 \
-  -d postgres
+docker compose up -d
 ```
 
-### Redis (gateway, auth, user, financial)
+Os serviços NestJS continuam rodando em modo dev (fora do Docker).
+
+Para conferir se os containers subiram:
 
 ```bash
-docker run --name redis -p 6379:6379 -d redis
+docker compose ps
 ```
 
-### RabbitMQ (user, financial)
+## Migrations (financial-service)
 
-```bash
-docker run --name rabbitmq \
-  -p 5672:5672 \
-  -p 15672:15672 \
-  -d rabbitmq:3-management
-```
-
-### Migrations (financial-service)
+O `docker compose` sobe o PostgreSQL, mas as tabelas precisam ser criadas
+rodando as migrations manualmente na primeira vez:
 
 ```bash
 cd financial
@@ -426,34 +452,34 @@ Todos os endpoints devem ser acessados via API Gateway.
 
 ## Auth Service
 
-| Método | Endpoint | Descrição | Auth |
-|--------|----------|-----------|------|
-| POST | `/auth/login` | Realiza login do usuário | ❌ |
-| POST | `/auth/logout` | Invalida o token (blacklist) | ✅ |
-| POST | `/auth/validaToken` | Valida um token JWT | ✅ |
+| Método | Endpoint            | Descrição                    | Auth |
+| ------ | ------------------- | ---------------------------- | ---- |
+| POST   | `/auth/login`       | Realiza login do usuário     | ❌   |
+| POST   | `/auth/logout`      | Invalida o token (blacklist) | ✅   |
+| POST   | `/auth/validaToken` | Valida um token JWT          | ✅   |
 
 ## User Service
 
-| Método | Endpoint | Descrição | Auth |
-|--------|----------|-----------|------|
-| POST | `/user` | Criar novo usuário | ❌ |
-| GET | `/user/me` | Retorna dados do usuário autenticado | ✅ |
-| GET | `/user` | Listar usuários | ✅ ADMIN |
-| GET | `/user/:id` | Buscar usuário por ID (com cache) | ✅ ADMIN |
-| PATCH | `/user/:id` | Atualizar dados do usuário | ✅ Owner/ADMIN |
-| DELETE | `/user/:id` | Exclusão lógica de usuário | ✅ Owner/ADMIN |
+| Método | Endpoint    | Descrição                            | Auth           |
+| ------ | ----------- | ------------------------------------ | -------------- |
+| POST   | `/user`     | Criar novo usuário                   | ❌             |
+| GET    | `/user/me`  | Retorna dados do usuário autenticado | ✅             |
+| GET    | `/user`     | Listar usuários                      | ✅ ADMIN       |
+| GET    | `/user/:id` | Buscar usuário por ID (com cache)    | ✅ ADMIN       |
+| PATCH  | `/user/:id` | Atualizar dados do usuário           | ✅ Owner/ADMIN |
+| DELETE | `/user/:id` | Exclusão lógica de usuário           | ✅ Owner/ADMIN |
 
 ## Financial Service
 
-| Método | Endpoint | Descrição | Auth |
-|--------|----------|-----------|------|
-| POST | `/financial/accounts` | Criar conta | ✅ |
-| GET | `/financial/accounts/user/:userId` | Listar contas do usuário | ✅ |
-| GET | `/financial/accounts/:id` | Buscar conta por ID | ✅ |
-| DELETE | `/financial/accounts/:id` | Desativar conta | ✅ |
-| POST | `/financial/transactions` | Enfileirar transação (assíncrono) | ✅ |
-| GET | `/financial/transactions/account/:id` | Extrato da conta | ✅ |
-| GET | `/financial/transactions/account/:id/balance` | Saldo da conta | ✅ |
+| Método | Endpoint                                      | Descrição                         | Auth |
+| ------ | --------------------------------------------- | --------------------------------- | ---- |
+| POST   | `/financial/accounts`                         | Criar conta                       | ✅   |
+| GET    | `/financial/accounts/user/:userId`            | Listar contas do usuário          | ✅   |
+| GET    | `/financial/accounts/:id`                     | Buscar conta por ID               | ✅   |
+| DELETE | `/financial/accounts/:id`                     | Desativar conta                   | ✅   |
+| POST   | `/financial/transactions`                     | Enfileirar transação (assíncrono) | ✅   |
+| GET    | `/financial/transactions/account/:id`         | Extrato da conta                  | ✅   |
+| GET    | `/financial/transactions/account/:id/balance` | Saldo da conta                    | ✅   |
 
 Header utilizado nas rotas protegidas:
 
@@ -517,6 +543,7 @@ POST /financial/transactions
 ```
 
 Resposta imediata:
+
 ```json
 {
   "jobId": "1",
@@ -569,12 +596,12 @@ Formato padrão das respostas de erro:
 
 O projeto possui testes unitários com Jest cobrindo a lógica de negócio dos serviços, com foco em regras de domínio, condicionais críticas e side-effects relevantes (banco, cache, fila).
 
-| Serviço | Cobertura |
-|---------|-----------|
-| `auth` | Login (sucesso, credenciais inválidas, serviço indisponível), validação de token (válido, ausente, blacklist, inválido), logout |
-| `user` | Criação (novo, CPF/email duplicado, reativação de deletado), busca por ID com cache (HIT/MISS), autenticação, atualização e remoção (soft delete) |
-| `financial` | Transações (depósito, saque, transferência, saldo insuficiente), contas (criação, conflito de tipo duplicado, busca, desativação) |
-| `gateway` | Rate limiting (incremento, TTL, bloqueio em 429), rotas públicas vs protegidas, autenticação (token válido/inválido/ausente, serviço indisponível) |
+| Serviço     | Cobertura                                                                                                                                          |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `auth`      | Login (sucesso, credenciais inválidas, serviço indisponível), validação de token (válido, ausente, blacklist, inválido), logout                    |
+| `user`      | Criação (novo, CPF/email duplicado, reativação de deletado), busca por ID com cache (HIT/MISS), autenticação, atualização e remoção (soft delete)  |
+| `financial` | Transações (depósito, saque, transferência, saldo insuficiente), contas (criação, conflito de tipo duplicado, busca, desativação)                  |
+| `gateway`   | Rate limiting (incremento, TTL, bloqueio em 429), rotas públicas vs protegidas, autenticação (token válido/inválido/ausente, serviço indisponível) |
 
 Rodar os testes de um serviço:
 
