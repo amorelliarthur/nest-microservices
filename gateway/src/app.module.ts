@@ -12,7 +12,9 @@ import { HttpModule } from '@nestjs/axios';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import { AuthMiddleware } from './common/middlewares/auth.middleware';
 import { RedisService } from './common/redis/redis.service';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { MetricsModule } from './metrics/metrics.module';
+import { MetricsInterceptor } from './metrics/metrics.interceptor';
 
 @Module({
   imports: [
@@ -20,7 +22,14 @@ import { MetricsModule } from './metrics/metrics.module';
     HttpModule,
     MetricsModule,
   ],
-  providers: [AuthMiddleware, RedisService],
+  providers: [
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: MetricsInterceptor,
+    },
+    AuthMiddleware,
+    RedisService,
+  ],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
