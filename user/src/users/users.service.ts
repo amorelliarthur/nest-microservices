@@ -103,7 +103,9 @@ export class UsersService {
 
   // Usado internamente pelo auth-service para autenticar
   async authenticate(email: string, senha: string) {
-    const user = await this.userModel.findOne({ email, deletedAt: null });
+    const user = await this.userModel
+      .findOne({ email, deletedAt: null })
+      .select('+senha');
     if (!user) throw new NotFoundException('Usuário não encontrado');
 
     const senhaValida = await bcrypt.compare(senha, user.senha);

@@ -188,7 +188,10 @@ describe('UsersService', () => {
   describe('authenticate()', () => {
     it('deve retornar o usuário sem a senha quando as credenciais são válidas', async () => {
       const userDoc = buildUserDoc({ senha: 'hashed-senha' });
-      userModel.findOne.mockResolvedValue(userDoc);
+      // findOne(...).select('+senha') → retorna o userDoc
+      userModel.findOne.mockReturnValue({
+        select: jest.fn().mockResolvedValue(userDoc),
+      });
       (bcrypt.compare as jest.Mock).mockResolvedValue(true);
 
       const result = await service.authenticate('arthur@user.br', 'Senha@123');
@@ -197,7 +200,9 @@ describe('UsersService', () => {
     });
 
     it('deve lançar NotFoundException quando o usuário não existe', async () => {
-      userModel.findOne.mockResolvedValue(null);
+      userModel.findOne.mockReturnValue({
+        select: jest.fn().mockResolvedValue(null),
+      });
 
       await expect(
         service.authenticate('inexistente@user.br', 'Senha@123'),
@@ -206,7 +211,9 @@ describe('UsersService', () => {
 
     it('deve lançar UnauthorizedException quando a senha está incorreta', async () => {
       const userDoc = buildUserDoc({ senha: 'hashed-senha' });
-      userModel.findOne.mockResolvedValue(userDoc);
+      userModel.findOne.mockReturnValue({
+        select: jest.fn().mockResolvedValue(userDoc),
+      });
       (bcrypt.compare as jest.Mock).mockResolvedValue(false);
 
       await expect(
