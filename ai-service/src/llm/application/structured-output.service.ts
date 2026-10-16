@@ -3,6 +3,7 @@ import type { z } from 'zod';
 import { LLM_PROVIDER } from '../domain/llm-provider.port';
 import type { LlmMessage, LlmProvider } from '../domain/llm-provider.port';
 import { StructuredOutputError } from '../domain/structured-output.error';
+import { formatZodIssues } from '../../shared/zod/format-zod-issues';
 
 export interface StructuredOutputOptions<T> {
   schema: z.ZodType<T>;
@@ -60,12 +61,6 @@ export class StructuredOutputService {
     const result = schema.safeParse(json);
     if (result.success) return { success: true, data: result.data };
 
-    const issues = result.error.issues
-      .map(
-        (issue) =>
-          `${issue.path.map(String).join('.') || '(raiz)'}: ${issue.message}`,
-      )
-      .join('; ');
-    return { success: false, error: issues };
+    return { success: false, error: formatZodIssues(result.error).join('; ') };
   }
 }
