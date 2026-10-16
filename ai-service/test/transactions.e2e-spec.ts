@@ -44,4 +44,18 @@ describe('POST /transactions/classify (e2e)', () => {
 
     expect(llm.requests).toHaveLength(0);
   });
+
+  it('returns 502 without leaking details when the model keeps returning invalid output', async () => {
+    await createApp(['{}', '{}']);
+
+    const response = await request(app.getHttpServer())
+      .post('/transactions/classify')
+      .send({ description: 'Uber' })
+      .expect(502);
+
+    expect(response.body).toEqual({
+      statusCode: 502,
+      message: 'The AI model returned an invalid response. Please try again.',
+    });
+  });
 });
