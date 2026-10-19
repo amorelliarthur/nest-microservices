@@ -325,6 +325,7 @@ PORTA=3002
 AUTH_SERVER=http://localhost:3001
 USER_SERVER=http://localhost:3000
 FINANCIAL_SERVER=http://localhost:3004
+AI_SERVER=http://localhost:3006
 REDIS_HOST=localhost
 REDIS_PORT=6379
 NODE_ENV=dev

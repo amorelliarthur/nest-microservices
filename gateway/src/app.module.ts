@@ -36,6 +36,7 @@ export class AppModule implements NestModule {
     const authServer = process.env.AUTH_SERVER;
     const userServer = process.env.USER_SERVER;
     const financialServer = process.env.FINANCIAL_SERVER;
+    const aiServer = process.env.AI_SERVER;
 
     const proxies: Array<{
       path: string;
@@ -56,6 +57,11 @@ export class AppModule implements NestModule {
         path: '/financial/*path',
         target: financialServer,
         rewrite: { '^/financial': '' },
+      },
+      {
+        path: '/ai/*path',
+        target: aiServer,
+        rewrite: { '^/ai': '' },
       },
     ];
 
