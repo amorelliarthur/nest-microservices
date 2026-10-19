@@ -36,6 +36,7 @@ export class GeminiProvider implements LlmProvider {
 
     return {
       text: response.text ?? '',
+      toolCalls: [],
       model: this.model,
       usage: {
         inputTokens: response.usageMetadata?.promptTokenCount ?? 0,
