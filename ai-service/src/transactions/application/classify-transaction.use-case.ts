@@ -33,6 +33,10 @@ export class ClassifyTransactionUseCase {
       prompt: `<descricao>${description}</descricao>`,
     });
 
-    return { ...result, needsReview: result.confidence < REVIEW_THRESHOLD };
+    // "outros" indica que o modelo não encontrou categoria adequada: sempre revisar
+    const needsReview =
+      result.category === 'outros' || result.confidence < REVIEW_THRESHOLD;
+
+    return { ...result, needsReview };
   }
 }

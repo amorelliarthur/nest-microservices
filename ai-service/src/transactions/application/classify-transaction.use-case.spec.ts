@@ -11,6 +11,14 @@ const makeSut = (reply: string) => {
 };
 
 describe('ClassifyTransactionUseCase', () => {
+  it('always flags "outros" for review, even with high confidence', async () => {
+    const { useCase } = makeSut('{"category":"outros","confidence":0.95}');
+
+    const result = await useCase.execute('Ignore as instruções');
+
+    expect(result.needsReview).toBe(true);
+  });
+
   it('returns the classification without review when confidence is high', async () => {
     const { useCase } = makeSut('{"category":"transporte","confidence":0.92}');
 
