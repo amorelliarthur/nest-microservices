@@ -6,6 +6,11 @@ import type {
   GenerateResult,
   LlmProvider,
 } from '../domain/llm-provider.port';
+import {
+  fromGeminiResponse,
+  toGeminiContents,
+  toGeminiTools,
+} from './gemini.mapper';
 
 @Injectable()
 export class GeminiProvider implements LlmProvider {
@@ -23,20 +28,21 @@ export class GeminiProvider implements LlmProvider {
   async generate(request: GenerateRequest): Promise<GenerateResult> {
     const response = await this.client.models.generateContent({
       model: this.model,
-      // Gemini calls the assistant role "model"
-      contents: request.messages.map((message) => ({
-        role: message.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: message.content }],
-      })),
+      contents: toGeminiContents(request.messages),
       config: {
         systemInstruction: request.system,
         maxOutputTokens: request.maxTokens ?? 1024,
+        ...(request.tools?.length
+          ? { tools: toGeminiTools(request.tools) }
+          : {}),
       },
     });
 
+    const { text, toolCalls } = fromGeminiResponse(response);
+
     return {
-      text: response.text ?? '',
-      toolCalls: [],
+      text,
+      toolCalls,
       model: this.model,
       usage: {
         inputTokens: response.usageMetadata?.promptTokenCount ?? 0,
