@@ -117,4 +117,16 @@ describe('HttpFinancialClient', () => {
       FinancialServiceError,
     );
   });
+
+  it('fails fast at startup when FINANCIAL_TIMEOUT_MS is not a positive integer', () => {
+    expect(
+      () =>
+        new HttpFinancialClient(
+          new ConfigService({
+            FINANCIAL_SERVER: 'http://financial.test',
+            FINANCIAL_TIMEOUT_MS: '3s',
+          }),
+        ),
+    ).toThrow('FINANCIAL_TIMEOUT_MS');
+  });
 });

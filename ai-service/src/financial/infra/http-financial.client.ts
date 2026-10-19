@@ -14,6 +14,7 @@ import {
 } from './financial-response.schemas';
 
 const DEFAULT_TIMEOUT_MS = 3000;
+const timeoutSchema = z.coerce.number().int().positive();
 
 @Injectable()
 export class HttpFinancialClient implements FinancialClient {
@@ -22,9 +23,15 @@ export class HttpFinancialClient implements FinancialClient {
 
   constructor(config: ConfigService) {
     this.baseUrl = config.getOrThrow<string>('FINANCIAL_SERVER');
-    this.timeoutMs = Number(
-      config.get<string>('FINANCIAL_TIMEOUT_MS') ?? DEFAULT_TIMEOUT_MS,
-    );
+    // Fail fast: configuração inválida impede o serviço de subir, com mensagem clara
+    const rawTimeout = config.get<string>('FINANCIAL_TIMEOUT_MS');
+    const timeout = timeoutSchema.safeParse(rawTimeout ?? DEFAULT_TIMEOUT_MS);
+    if (!timeout.success) {
+      throw new Error(
+        `Invalid FINANCIAL_TIMEOUT_MS "${rawTimeout}": expected a positive integer in milliseconds`,
+      );
+    }
+    this.timeoutMs = timeout.data;
   }
 
   listAccounts(userId: string): Promise<FinancialAccount[]> {
