@@ -335,7 +335,7 @@ NODE_ENV=dev
 ```env
 APP_NAME=auth
 PORTA=3001
-CHAVE_PRIVADA=ChaveGrandeParaDificultarODecode
+CHAVE_PRIVADA=<gere-um-segredo-forte>
 TEMPO_EXP=1d
 USER_SERVER=localhost:3000
 REDIS_HOST=localhost
