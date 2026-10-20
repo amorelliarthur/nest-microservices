@@ -28,14 +28,21 @@ const safely = async <T>(operation: () => Promise<T>): Promise<T> => {
 const sumInCents = (transactions: FinancialTransaction[]): number =>
   transactions.reduce((sum, t) => sum + Math.round(t.amount * 100), 0);
 
+// Transferências não são gastos: o modelo precisa receber os dois totais separados
 const summarize = (transactions: FinancialTransaction[]) => {
-  const inCents = sumInCents(transactions.filter((t) => t.type === 'DEPOSIT'));
-  const outCents = sumInCents(transactions.filter((t) => t.type !== 'DEPOSIT'));
+  const ofType = (type: FinancialTransaction['type']) =>
+    sumInCents(transactions.filter((t) => t.type === type));
+
+  const inCents = ofType('DEPOSIT');
+  const spentCents = ofType('WITHDRAWAL');
+  const transfersCents = ofType('TRANSFER');
+
   return {
     count: transactions.length,
     totalIn: inCents / 100,
-    totalOut: outCents / 100,
-    net: (inCents - outCents) / 100,
+    totalSpent: spentCents / 100,
+    totalTransfersOut: transfersCents / 100,
+    net: (inCents - spentCents - transfersCents) / 100,
   };
 };
 
@@ -76,7 +83,9 @@ export const createFinancialTools = (
     name: 'list_transactions',
     description:
       'Lists transactions of one account of the current user, optionally filtered by period and type. ' +
-      'The result includes a summary with totals already calculated: always use these totals instead of adding values yourself.',
+      'The result includes a summary with totals already calculated: always use these totals instead of adding values yourself. ' +
+      'totalSpent is the money spent (purchases, payments, withdrawals). ' +
+      'totalTransfersOut is money transferred to other accounts and is NOT spending; report it separately.',
     schema: z.object({
       accountId: accountIdField,
       from: z.iso

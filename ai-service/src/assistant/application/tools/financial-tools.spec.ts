@@ -11,7 +11,13 @@ import { ToolRegistry } from './tool-registry';
 import type { ToolResult } from './tool-registry';
 
 interface TransactionsOutput {
-  summary: { count: number; totalIn: number; totalOut: number; net: number };
+  summary: {
+    count: number;
+    totalIn: number;
+    totalSpent: number;
+    totalTransfersOut: number;
+    net: number;
+  };
   transactions: { date: string; description: string | null }[];
   truncated: boolean;
 }
@@ -116,8 +122,34 @@ describe('financial tools', () => {
     expect(output.summary).toEqual({
       count: 3,
       totalIn: 500,
-      totalOut: 0.3,
+      totalSpent: 0.3,
+      totalTransfersOut: 0,
       net: 499.7,
+    });
+  });
+
+  it('list_transactions separates transfers from spending', async () => {
+    const client = new FakeFinancialClient(
+      { 'user-1': [{ id: 'acc-1', type: 'CHECKING', balance: 0 }] },
+      {
+        'acc-1': [
+          tx('t1', 'DEPOSIT', 1000, '2026-10-01T10:00:00Z'),
+          tx('t2', 'WITHDRAWAL', 312.45, '2026-10-02T10:00:00Z'),
+          tx('t3', 'TRANSFER', 500, '2026-10-03T10:00:00Z'),
+        ],
+      },
+    );
+
+    const output = outputOf(
+      await run(makeSut(client), 'list_transactions', { accountId: 'acc-1' }),
+    );
+
+    expect(output.summary).toEqual({
+      count: 3,
+      totalIn: 1000,
+      totalSpent: 312.45,
+      totalTransfersOut: 500,
+      net: 187.55,
     });
   });
 
