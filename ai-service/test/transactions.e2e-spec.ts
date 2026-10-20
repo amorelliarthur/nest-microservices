@@ -1,10 +1,8 @@
 import { INestApplication } from '@nestjs/common';
-import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { App } from 'supertest/types';
-import { AppModule } from '../src/app.module';
-import { LLM_PROVIDER } from '../src/llm/domain/llm-provider.port';
-import { FakeLlmProvider } from '../src/llm/testing/fake-llm.provider';
+import type { FakeLlmProvider } from '../src/llm/testing/fake-llm.provider';
+import { createTestApp } from './support/create-test-app';
 
 describe('POST /transactions/classify (e2e)', () => {
   let app: INestApplication<App>;
@@ -13,13 +11,7 @@ describe('POST /transactions/classify (e2e)', () => {
   const USER_HEADERS = { 'x-user-id': 'user-1', 'x-user-role': 'USER' };
 
   const createApp = async (replies: string[]) => {
-    llm = new FakeLlmProvider(replies);
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(LLM_PROVIDER)
-      .useValue(llm)
-      .compile();
-    app = moduleRef.createNestApplication();
-    await app.init();
+    ({ app, llm } = await createTestApp({ llmReplies: replies }));
   };
 
   afterEach(async () => {
