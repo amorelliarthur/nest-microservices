@@ -1,14 +1,15 @@
 # Nest Microservices
 
-![Node](https://img.shields.io/badge/node-%3E%3D18-green)
+![Node](https://img.shields.io/badge/node-20%20%7C%2024-green)
 ![NestJS](https://img.shields.io/badge/nestjs-11-red)
 ![Architecture](https://img.shields.io/badge/architecture-microservices-orange)
 ![Redis](https://img.shields.io/badge/redis-enabled-red)
 ![Prometheus](https://img.shields.io/badge/prometheus-enabled-orange)
 ![Grafana](https://img.shields.io/badge/grafana-dashboards-yellow)
+![LLM](https://img.shields.io/badge/LLM-Gemini-blue)
 ![License](https://img.shields.io/badge/license-MIT-lightgrey)
 
-Arquitetura de microserviços em NestJS com gerenciamento de usuários e serviço financeiro.
+Arquitetura de microserviços em NestJS com gerenciamento de usuários, serviço financeiro e um assistente de IA com tool calling sobre os dados do usuário.
 
 ---
 
@@ -19,7 +20,7 @@ Arquitetura de microserviços em NestJS com gerenciamento de usuários e serviç
 - Autenticação com JWT e logout com blacklist
 - Autorização por níveis (USER / ADMIN)
 - Comunicação entre serviços via HTTP e eventos assíncronos (RabbitMQ)
-- Validação de dados com class-validator
+- Validação de dados com class-validator e Zod (ai-service)
 - Logging de requisições HTTP
 - Persistência com MongoDB (Mongoose) e PostgreSQL (TypeORM)
 - Migrations com TypeORM
@@ -28,6 +29,11 @@ Arquitetura de microserviços em NestJS com gerenciamento de usuários e serviç
 - Event-Driven Architecture entre user e financial services com RabbitMQ
 - Testes unitários com Jest
 - Observabilidade com Prometheus e Grafana (métricas de processo via prom-client)
+- Serviço de IA (ai-service) com o LLM isolado atrás de uma porta própria (Ports & Adapters)
+- Structured outputs validados com Zod, com retry enviando o erro de validação ao modelo
+- Tool calling: assistente financeiro que consulta dados reais com verificação de dono da conta
+- Defesas contra prompt injection: saídas restritas por schema e resultados de tools tratados como dados
+- Testes unitários e e2e do ai-service sem chamadas reais ao LLM (fakes), escritos antes da implementação
 
 ---
 
@@ -39,8 +45,11 @@ O sistema é dividido em microserviços independentes:
 - **auth-service** → autenticação, geração/validação de JWT e blacklist de tokens
 - **user-service** → gerenciamento de usuários com cache Redis, publica e consome eventos via RabbitMQ
 - **financial-service** → contas e transações financeiras com fila assíncrona (BullMQ), publica e consome eventos via RabbitMQ
+- **ai-service** → IA aplicada ao backend: classificação de transações (structured output) e assistente financeiro com tool calling sobre o financial-service
 
 A comunicação síncrona ocorre via **HTTP REST**, centralizada pelo gateway. A comunicação entre user-service e financial-service é **assíncrona via RabbitMQ** (Event-Driven Architecture), sem chamadas HTTP diretas entre os dois.
+
+O ai-service consulta o financial-service **diretamente via HTTP** (tráfego interno, sem voltar pelo gateway), repassando a identidade do usuário autenticado no header `x-user-id`.
 
 ```
 [ Client ]
@@ -60,11 +69,17 @@ A comunicação síncrona ocorre via **HTTP REST**, centralizada pelo gateway. A
      |               v
      |            MongoDB
      |
-     +------> [ Financial Service :3004 ]
-                Queue (Redis + BullMQ)
+     +------> [ Financial Service :3004 ] <----+
+     |          Queue (Redis + BullMQ)         |  tools (HTTP interno,
+     |               |                         |  x-user-id)
+     |               v                         |
+     |           PostgreSQL                    |
+     |                                         |
+     +------> [ AI Service :3006 ] ------------+
+                Guard (x-user-id)
                      |
                      v
-                 PostgreSQL
+              [ Gemini (LLM) ]
 
   Eventos assíncronos via RabbitMQ:
 
@@ -91,6 +106,8 @@ A comunicação síncrona ocorre via **HTTP REST**, centralizada pelo gateway. A
 - Prometheus / prom-client
 - Grafana
 - Docker
+- Google Gemini (@google/genai)
+- Zod (validação de entrada, de saída do LLM e de respostas entre serviços)
 
 ---
 
@@ -118,6 +135,18 @@ src/
 └── main.ts
 ```
 
+O ai-service usa uma divisão em camadas mais explícita, separando regras de negócio dos detalhes de infraestrutura:
+
+```
+src/
+├── llm/            → porta LlmProvider, adapter Gemini, structured output
+├── financial/      → porta FinancialClient, adapter HTTP, verificação de dono
+├── assistant/      → tools, registry e loop do agente
+├── transactions/   → classificação de transações
+└── shared/         → guard de usuário, pipes Zod, clock
+    (cada módulo: domain/ → application/ → infra/ → presentation/)
+```
+
 ---
 
 ## API Gateway
@@ -137,6 +166,7 @@ Rotas expostas:
 - `/auth/*` → encaminha para auth-service
 - `/user/*` → encaminha para user-service
 - `/financial/*` → encaminha para financial-service
+- `/ai/*` → encaminha para ai-service (o prefixo `/ai` é removido)
 
 ## Auth Service
 
@@ -166,6 +196,48 @@ Responsabilidades:
 - Controle de saldo com pessimistic lock
 - Extrato de transações por conta
 - Processamento assíncrono de transações via fila BullMQ + Redis
+
+## AI Service
+
+Responsabilidades:
+
+- Classificar a descrição de uma transação em uma categoria fixa (structured output)
+- Responder perguntas em linguagem natural sobre as finanças do próprio usuário (tool calling)
+- Isolar o provedor de LLM atrás da porta `LlmProvider`, permitindo trocar de modelo ou provedor sem alterar regras de negócio
+
+### Como funciona o tool calling
+
+```
+pergunta → modelo ──(pede tools?)──não──▶ resposta final
+              ▲            │
+              │           sim
+              │            ▼
+              └── resultados ◀── executa as tools com o userId da requisição
+```
+
+Tools disponíveis (somente leitura):
+
+| Tool                | Descrição                                                            |
+| ------------------- | -------------------------------------------------------------------- |
+| `list_accounts`     | Lista as contas do usuário com tipo e saldo                          |
+| `get_balance`       | Saldo de uma conta do usuário                                        |
+| `list_transactions` | Extrato filtrado por período e tipo, com totais calculados em código |
+
+### Decisões de segurança e confiabilidade
+
+- **O modelo nunca escolhe o usuário:** o `userId` vem da requisição autenticada; qualquer `userId` enviado pelo modelo é descartado pelo schema
+- **Verificação de dono:** todo `accountId` pedido pelo modelo é conferido contra as contas do usuário; contas alheias retornam "não encontrada", sem revelar que existem
+- **Validação de tudo que vem do modelo:** argumentos das tools e respostas estruturadas passam por Zod antes de qualquer uso
+- **Contas no código, não no modelo:** totais são somados em centavos e enviados prontos, separando gastos de transferências
+- **Prompt injection:** a saída da classificação é restrita a um enum, e resultados de tools são tratados como dados, nunca como instruções
+- **Limites de custo:** tamanho máximo das perguntas, no máximo 50 transações por resposta e limite de 5 iterações no loop do agente
+- **Erros do modelo:** respostas inválidas ou loops não concluídos retornam `502`, sem expor detalhes internos ao cliente
+
+### Limitações conhecidas
+
+- Períodos são calculados em UTC
+- Cada pergunta é independente (ainda sem memória de conversa)
+- Erros temporários do provedor (ex.: `503` por alta demanda) ainda não têm retry nem fallback de modelo
 
 ---
 
@@ -374,6 +446,18 @@ RABBITMQ_HOST=localhost
 NODE_ENV=dev
 ```
 
+### AI Service
+
+Requer **Node.js >= 24.9** (veja `ai-service/.nvmrc`).
+
+```env
+PORT=3006
+GEMINI_API_KEY=<sua-chave-do-google-ai-studio>
+GEMINI_MODEL=gemini-3.5-flash-lite
+FINANCIAL_SERVER=http://localhost:3004
+FINANCIAL_TIMEOUT_MS=3000
+```
+
 ---
 
 # Instalação
@@ -392,6 +476,7 @@ cd auth && npm install
 cd ../user && npm install
 cd ../financial && npm install
 cd ../gateway && npm install
+cd ../ai-service && npm install
 ```
 
 ---
@@ -441,6 +526,9 @@ cd financial && npm run start:dev
 
 # API Gateway
 cd gateway && npm run start:dev
+
+# AI Service
+cd ai-service && npm run start:dev
 ```
 
 ---
@@ -481,6 +569,13 @@ Todos os endpoints devem ser acessados via API Gateway.
 | POST   | `/financial/transactions`                     | Enfileirar transação (assíncrono) | ✅   |
 | GET    | `/financial/transactions/account/:id`         | Extrato da conta                  | ✅   |
 | GET    | `/financial/transactions/account/:id/balance` | Saldo da conta                    | ✅   |
+
+## AI Service
+
+| Método | Endpoint                    | Descrição                                                | Auth |
+| ------ | --------------------------- | -------------------------------------------------------- | ---- |
+| POST   | `/ai/transactions/classify` | Classifica a descrição de uma transação em uma categoria | ✅   |
+| POST   | `/ai/assistant/ask`         | Responde perguntas sobre as finanças do próprio usuário  | ✅   |
 
 Header utilizado nas rotas protegidas:
 
@@ -565,6 +660,43 @@ POST /financial/transactions
 }
 ```
 
+### Classificar transação
+
+```json
+POST /ai/transactions/classify
+{
+  "description": "Almoço no restaurante"
+}
+```
+
+Resposta:
+
+```json
+{
+  "category": "alimentacao",
+  "confidence": 0.98,
+  "needsReview": false
+}
+```
+
+### Perguntar ao assistente
+
+```json
+POST /ai/assistant/ask
+{
+  "question": "Quanto eu gastei este mês e com o quê?"
+}
+```
+
+Resposta (resumida):
+
+```json
+{
+  "answer": "Neste mês você gastou R$ 632,35 ... Transferências feitas para outras contas: R$ 500,00 (Reserva mensal) ...",
+  "toolsUsed": ["list_accounts", "list_transactions", "list_transactions"]
+}
+```
+
 ---
 
 # Autorização
@@ -575,6 +707,8 @@ A API possui dois níveis de acesso:
 - **ADMIN** → acesso completo
 
 A autenticação é centralizada no gateway — os serviços internos recebem os dados do usuário via headers `x-user-id`, `x-user-role` e `x-user-email`.
+
+No ai-service, um guard global rejeita com `401` qualquer requisição sem `x-user-id`. O assistente sempre opera apenas sobre os dados do próprio usuário, inclusive para ADMIN.
 
 ---
 
@@ -593,22 +727,44 @@ Formato padrão das respostas de erro:
 
 ---
 
+# Dados de desenvolvimento
+
+Com todos os serviços rodando, o script abaixo cria usuários, contas e transações de teste usando apenas as APIs do gateway (respeitando todas as regras de negócio). Ele é idempotente: rodar de novo não duplica dados.
+
+```bash
+node scripts/seed-dev.mjs
+```
+
+Usuários criados (somente para ambiente local): `ana.teste@example.com` e `bruno.teste@example.com`, senha `Teste@123`.
+
+---
+
 # Testes
 
 O projeto possui testes unitários com Jest cobrindo a lógica de negócio dos serviços, com foco em regras de domínio, condicionais críticas e side-effects relevantes (banco, cache, fila).
 
-| Serviço     | Cobertura                                                                                                                                          |
-| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `auth`      | Login (sucesso, credenciais inválidas, serviço indisponível), validação de token (válido, ausente, blacklist, inválido), logout                    |
-| `user`      | Criação (novo, CPF/email duplicado, reativação de deletado), busca por ID com cache (HIT/MISS), autenticação, atualização e remoção (soft delete)  |
-| `financial` | Transações (depósito, saque, transferência, saldo insuficiente), contas (criação, conflito de tipo duplicado, busca, desativação)                  |
-| `gateway`   | Rate limiting (incremento, TTL, bloqueio em 429), rotas públicas vs protegidas, autenticação (token válido/inválido/ausente, serviço indisponível) |
+| Serviço      | Cobertura                                                                                                                                                                                                                                            |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `auth`       | Login (sucesso, credenciais inválidas, serviço indisponível), validação de token (válido, ausente, blacklist, inválido), logout                                                                                                                      |
+| `user`       | Criação (novo, CPF/email duplicado, reativação de deletado), busca por ID com cache (HIT/MISS), autenticação, atualização e remoção (soft delete)                                                                                                    |
+| `financial`  | Transações (depósito, saque, transferência, saldo insuficiente), contas (criação, conflito de tipo duplicado, busca, desativação)                                                                                                                    |
+| `gateway`    | Rate limiting (incremento, TTL, bloqueio em 429), rotas públicas vs protegidas, autenticação (token válido/inválido/ausente, serviço indisponível)                                                                                                   |
+| `ai-service` | Structured output (retry e erro), mapeamento Gemini, verificação de dono, tools financeiras (totais em centavos, gastos vs transferências, filtros, truncamento), loop do agente (limite de iterações), e2e com guard, validação e erros 401/400/502 |
+
+No ai-service, os testes foram escritos antes da implementação (test-first), e os testes e2e sobem a aplicação inteira trocando o LLM e o financial-service por fakes. Por isso o CI não precisa de chave de API nem gasta cota do provedor.
 
 Rodar os testes de um serviço:
 
 ```bash
 cd <servico>
 npm run test
+```
+
+Rodar os testes e2e do ai-service:
+
+```bash
+cd ai-service
+npm run test:e2e
 ```
 
 Rodar um arquivo de teste específico:
