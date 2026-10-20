@@ -16,7 +16,13 @@ export interface ToolCall {
 export type LlmMessage =
   | { role: 'user'; content: string }
   | { role: 'assistant'; content: string; toolCalls?: ToolCall[] }
-  | { role: 'tool'; toolCallId: string; toolName: string; content: string };
+  | {
+      role: 'tool';
+      toolCallId: string;
+      toolName: string;
+      content: string;
+      isError?: boolean;
+    };
 
 export interface GenerateRequest {
   system?: string;

@@ -73,6 +73,33 @@ describe('gemini mapper', () => {
     ]);
   });
 
+  it('maps failed tool results to error responses', () => {
+    const messages: LlmMessage[] = [
+      {
+        role: 'tool',
+        toolCallId: 'call-1',
+        toolName: 'get_balance',
+        content: 'Account not found',
+        isError: true,
+      },
+    ];
+
+    expect(toGeminiContents(messages)).toEqual([
+      {
+        role: 'user',
+        parts: [
+          {
+            functionResponse: {
+              id: 'call-1',
+              name: 'get_balance',
+              response: { error: 'Account not found' },
+            },
+          },
+        ],
+      },
+    ]);
+  });
+
   it('maps tool definitions to function declarations', () => {
     const parameters = { type: 'object', properties: {} };
 

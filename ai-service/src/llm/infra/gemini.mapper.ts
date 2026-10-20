@@ -35,7 +35,9 @@ export const toGeminiContents = (messages: LlmMessage[]): Content[] =>
               functionResponse: {
                 id: message.toolCallId,
                 name: message.toolName,
-                response: { output: message.content },
+                response: message.isError
+                  ? { error: message.content }
+                  : { output: message.content },
               },
             },
           ],
