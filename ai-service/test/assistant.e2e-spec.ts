@@ -3,6 +3,7 @@ import request from 'supertest';
 import type { App } from 'supertest/types';
 import { MAX_ITERATIONS } from '../src/assistant/application/ask-assistant.use-case';
 import { FakeFinancialClient } from '../src/financial/testing/fake-financial.client';
+import { LlmProviderError } from '../src/llm/domain/llm-provider.error';
 import type { FakeLlmProvider } from '../src/llm/testing/fake-llm.provider';
 import type { FakeReply } from '../src/llm/testing/fake-llm.provider';
 import { createTestApp } from './support/create-test-app';
@@ -115,6 +116,37 @@ describe('POST /assistant/ask (e2e)', () => {
     expect(response.body).toEqual({
       statusCode: 502,
       message: 'The assistant could not complete the answer. Please try again.',
+    });
+  });
+
+  it('returns 503 when the AI provider is temporarily unavailable', async () => {
+    await createApp([new LlmProviderError('overloaded', true, 503)]);
+
+    const response = await request(app.getHttpServer())
+      .post('/assistant/ask')
+      .set(userHeaders('user-1'))
+      .send({ question: 'Quais são minhas contas?' })
+      .expect(503);
+
+    expect(response.body).toEqual({
+      statusCode: 503,
+      message:
+        'The AI service is temporarily unavailable. Please try again shortly.',
+    });
+  });
+
+  it('returns 502 when the AI provider fails permanently', async () => {
+    await createApp([new LlmProviderError('invalid model', false, 404)]);
+
+    const response = await request(app.getHttpServer())
+      .post('/assistant/ask')
+      .set(userHeaders('user-1'))
+      .send({ question: 'Quais são minhas contas?' })
+      .expect(502);
+
+    expect(response.body).toEqual({
+      statusCode: 502,
+      message: 'The AI service could not process the request.',
     });
   });
 });
