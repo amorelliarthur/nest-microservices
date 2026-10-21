@@ -9,10 +9,12 @@ export type FakeReply =
   string | { text?: string; toolCalls: ToolCall[] } | Error;
 
 export class FakeLlmProvider implements LlmProvider {
-  readonly name = 'fake';
   readonly requests: GenerateRequest[] = [];
 
-  constructor(private readonly replies: FakeReply[]) {}
+  constructor(
+    private readonly replies: FakeReply[],
+    readonly name = 'fake',
+  ) {}
 
   generate(request: GenerateRequest): Promise<GenerateResult> {
     this.requests.push(request);
