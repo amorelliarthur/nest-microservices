@@ -13,8 +13,13 @@ export class LlmProviderExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(LlmProviderExceptionFilter.name);
 
   catch(exception: LlmProviderError, host: ArgumentsHost) {
-    // Detalhes do provedor ficam no log; o cliente só sabe se vale tentar de novo
-    this.logger.warn(exception.message);
+    // Detalhes do provedor ficam no log; o cliente só sabe se vale tentar de novo.
+    // Falha permanente exige ação (ex.: modelo ou chave inválidos); temporária é só acompanhada
+    if (exception.retryable) {
+      this.logger.warn(exception.message);
+    } else {
+      this.logger.error(exception.message);
+    }
 
     const status = exception.retryable
       ? HttpStatus.SERVICE_UNAVAILABLE
