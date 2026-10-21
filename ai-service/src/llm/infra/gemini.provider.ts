@@ -1,7 +1,4 @@
-import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { GoogleGenAI } from '@google/genai';
-import type { GenerateContentResponse } from '@google/genai';
+import type { GenerateContentResponse, GoogleGenAI } from '@google/genai';
 import type {
   GenerateRequest,
   GenerateResult,
@@ -14,17 +11,14 @@ import {
   toGeminiTools,
 } from './gemini.mapper';
 
-@Injectable()
 export class GeminiProvider implements LlmProvider {
-  readonly name = 'gemini';
-  private readonly client: GoogleGenAI;
-  private readonly model: string;
+  readonly name: string;
 
-  constructor(config: ConfigService) {
-    this.client = new GoogleGenAI({
-      apiKey: config.getOrThrow<string>('GEMINI_API_KEY'),
-    });
-    this.model = config.getOrThrow<string>('GEMINI_MODEL');
+  constructor(
+    private readonly client: GoogleGenAI,
+    private readonly model: string,
+  ) {
+    this.name = `gemini:${model}`;
   }
 
   async generate(request: GenerateRequest): Promise<GenerateResult> {
