@@ -33,6 +33,7 @@ Arquitetura de microserviços em NestJS com gerenciamento de usuários, serviço
 - Structured outputs validados com Zod, com retry enviando o erro de validação ao modelo
 - Tool calling: assistente financeiro que consulta dados reais com verificação de dono da conta
 - Defesas contra prompt injection: saídas restritas por schema e resultados de tools tratados como dados
+- Resiliência a falhas do LLM com decorators: classificação de erros, retry com backoff exponencial e fallback de modelo
 - Testes unitários e e2e do ai-service sem chamadas reais ao LLM (fakes), escritos antes da implementação
 
 ---
@@ -139,11 +140,11 @@ O ai-service usa uma divisão em camadas mais explícita, separando regras de ne
 
 ```
 src/
-├── llm/            → porta LlmProvider, adapter Gemini, structured output
+├── llm/            → porta LlmProvider, adapter Gemini, structured output, retry e fallback
 ├── financial/      → porta FinancialClient, adapter HTTP, verificação de dono
 ├── assistant/      → tools, registry e loop do agente
 ├── transactions/   → classificação de transações
-└── shared/         → guard de usuário, pipes Zod, clock
+└── shared/         → guard de usuário, pipes Zod, clock, sleep
     (cada módulo: domain/ → application/ → infra/ → presentation/)
 ```
 
@@ -233,11 +234,27 @@ Tools disponíveis (somente leitura):
 - **Limites de custo:** tamanho máximo das perguntas, no máximo 50 transações por resposta e limite de 5 iterações no loop do agente
 - **Erros do modelo:** respostas inválidas ou loops não concluídos retornam `502`, sem expor detalhes internos ao cliente
 
+### Resiliência a falhas do provedor de LLM
+
+O provider de LLM é montado como uma cadeia de decorators, todos implementando a mesma porta `LlmProvider`. Quem usa o LLM (a classificação e o assistente) não percebe a diferença:
+
+```
+FallbackLlmProvider
+ ├── RetryingLlmProvider → GeminiProvider (modelo principal)
+ └── RetryingLlmProvider → GeminiProvider (modelo reserva, opcional)
+```
+
+- **Classificação de erros:** `429`, `5xx` e falhas de rede são temporários; `400`, `401`, `403` e `404` são permanentes
+- **Retry:** até 3 tentativas por modelo, com backoff exponencial e jitter, apenas para erros temporários
+- **Fallback:** se o modelo principal esgotar as tentativas, o modelo reserva assume; erros de configuração (como um modelo inexistente) não acionam o fallback, para não ficarem escondidos
+- **Resposta ao cliente:** `503` para indisponibilidade temporária e `502` para falhas permanentes, sem expor detalhes do provedor
+- **Logs:** falhas temporárias são registradas como `WARN`; falhas permanentes, que exigem ação (modelo ou chave inválidos), como `ERROR`
+
 ### Limitações conhecidas
 
 - Períodos são calculados em UTC
 - Cada pergunta é independente (ainda sem memória de conversa)
-- Erros temporários do provedor (ex.: `503` por alta demanda) ainda não têm retry nem fallback de modelo
+- O fallback usa outro modelo do mesmo provedor e não protege contra uma indisponibilidade geral do Gemini
 
 ---
 
@@ -454,9 +471,12 @@ Requer **Node.js >= 24.9** (veja `ai-service/.nvmrc`).
 PORT=3006
 GEMINI_API_KEY=<sua-chave-do-google-ai-studio>
 GEMINI_MODEL=gemini-3.5-flash-lite
+GEMINI_FALLBACK_MODEL=gemini-3.1-flash-lite
 FINANCIAL_SERVER=http://localhost:3004
 FINANCIAL_TIMEOUT_MS=3000
 ```
+
+O `GEMINI_FALLBACK_MODEL` é opcional: sem ele, o serviço usa apenas o modelo principal.
 
 ---
 
@@ -725,6 +745,15 @@ Formato padrão das respostas de erro:
 }
 ```
 
+No ai-service, falhas do provedor de LLM retornam `503` quando são temporárias (vale tentar de novo) e `502` quando são permanentes, sempre com uma mensagem genérica:
+
+```json
+{
+  "statusCode": 503,
+  "message": "The AI service is temporarily unavailable. Please try again shortly."
+}
+```
+
 ---
 
 # Dados de desenvolvimento
@@ -743,15 +772,15 @@ Usuários criados (somente para ambiente local): `ana.teste@example.com` e `brun
 
 O projeto possui testes unitários com Jest cobrindo a lógica de negócio dos serviços, com foco em regras de domínio, condicionais críticas e side-effects relevantes (banco, cache, fila).
 
-| Serviço      | Cobertura                                                                                                                                                                                                                                            |
-| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `auth`       | Login (sucesso, credenciais inválidas, serviço indisponível), validação de token (válido, ausente, blacklist, inválido), logout                                                                                                                      |
-| `user`       | Criação (novo, CPF/email duplicado, reativação de deletado), busca por ID com cache (HIT/MISS), autenticação, atualização e remoção (soft delete)                                                                                                    |
-| `financial`  | Transações (depósito, saque, transferência, saldo insuficiente), contas (criação, conflito de tipo duplicado, busca, desativação)                                                                                                                    |
-| `gateway`    | Rate limiting (incremento, TTL, bloqueio em 429), rotas públicas vs protegidas, autenticação (token válido/inválido/ausente, serviço indisponível)                                                                                                   |
-| `ai-service` | Structured output (retry e erro), mapeamento Gemini, verificação de dono, tools financeiras (totais em centavos, gastos vs transferências, filtros, truncamento), loop do agente (limite de iterações), e2e com guard, validação e erros 401/400/502 |
+| Serviço      | Cobertura                                                                                                                                                                                                                                                                                                                           |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `auth`       | Login (sucesso, credenciais inválidas, serviço indisponível), validação de token (válido, ausente, blacklist, inválido), logout                                                                                                                                                                                                     |
+| `user`       | Criação (novo, CPF/email duplicado, reativação de deletado), busca por ID com cache (HIT/MISS), autenticação, atualização e remoção (soft delete)                                                                                                                                                                                   |
+| `financial`  | Transações (depósito, saque, transferência, saldo insuficiente), contas (criação, conflito de tipo duplicado, busca, desativação)                                                                                                                                                                                                   |
+| `gateway`    | Rate limiting (incremento, TTL, bloqueio em 429), rotas públicas vs protegidas, autenticação (token válido/inválido/ausente, serviço indisponível)                                                                                                                                                                                  |
+| `ai-service` | Structured output (retry e erro), mapeamento Gemini, classificação de erros do provedor, retry com backoff, fallback de modelo, verificação de dono, tools financeiras (totais em centavos, gastos vs transferências, filtros, truncamento), loop do agente (limite de iterações), e2e com guard, validação e erros 401/400/502/503 |
 
-No ai-service, os testes foram escritos antes da implementação (test-first), e os testes e2e sobem a aplicação inteira trocando o LLM e o financial-service por fakes. Por isso o CI não precisa de chave de API nem gasta cota do provedor.
+No ai-service, os testes foram escritos antes da implementação (test-first), e os testes e2e sobem a aplicação inteira trocando o LLM e o financial-service por fakes. Por isso o CI não precisa de chave de API nem gasta cota do provedor. Tempo e aleatoriedade (relógio, espera do retry e jitter) são injetados, então os testes de retry rodam sem esperas reais.
 
 Rodar os testes de um serviço:
 
