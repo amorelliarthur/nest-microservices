@@ -39,19 +39,17 @@ export class TransactionsService {
   ): Promise<{ jobId: string; status: string }> {
     this.assertDistinctAccounts(dto);
 
-    // valida se o usuário logado é dono da conta origem — ADMIN não precisa da consulta
-    if (requester.role !== 'ADMIN') {
-      const account = await this.accountRepo.findOne({
-        where: { id: dto.accountId, active: true },
-      });
+    // valida se a conta origem existe e se o usuário logado pode movimentá-la
+    const account = await this.accountRepo.findOne({
+      where: { id: dto.accountId, active: true },
+    });
 
-      if (!account) throw new NotFoundException('Conta não encontrada');
+    if (!account) throw new NotFoundException('Conta não encontrada');
 
-      if (!canAccess(requester, account.userId)) {
-        throw new ForbiddenException(
-          'Você não tem permissão para movimentar esta conta',
-        );
-      }
+    if (!canAccess(requester, account.userId)) {
+      throw new ForbiddenException(
+        'Você não tem permissão para movimentar esta conta',
+      );
     }
 
     const jobId = await this.queueService.enqueueTransaction(dto);

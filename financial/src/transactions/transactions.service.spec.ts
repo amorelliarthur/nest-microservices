@@ -194,6 +194,21 @@ describe('TransactionsService', () => {
       ).rejects.toThrow(NotFoundException);
       expect(mockQueueService.enqueueTransaction).not.toHaveBeenCalled();
     });
+
+    it('deve lançar NotFoundException quando ADMIN movimenta conta inexistente, sem enfileirar', async () => {
+      mockAccountRepo.findOne.mockResolvedValue(null);
+
+      const dto: CreateTransactionDto = {
+        accountId: 'acc-inexistente',
+        type: TransactionType.DEPOSIT,
+        amount: 100,
+      };
+
+      await expect(
+        service.create(dto, { id: 'admin-1', role: 'ADMIN' }),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockQueueService.enqueueTransaction).not.toHaveBeenCalled();
+    });
   });
 
   describe('process()', () => {
