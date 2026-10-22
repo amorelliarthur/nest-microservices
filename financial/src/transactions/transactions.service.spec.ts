@@ -1,7 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
-import { BadRequestException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { TransactionsService } from './transactions.service';
 import { Transaction, TransactionType } from './entities/transaction.entity';
 import { Account } from '../accounts/entities/account.entity';
@@ -101,6 +105,89 @@ describe('TransactionsService', () => {
       await expect(promise).rejects.toThrow(BadRequestException);
       await expect(promise).rejects.toThrow(
         'Conta destino deve ser diferente da conta de origem',
+      );
+      expect(mockQueueService.enqueueTransaction).not.toHaveBeenCalled();
+    });
+
+    it('deve enfileirar quando o usuário é dono da conta', async () => {
+      const account = {
+        id: 'acc-1',
+        userId: 'user-1',
+        balance: 1000,
+        active: true,
+      };
+      mockAccountRepo.findOne.mockResolvedValue(account);
+      mockQueueService.enqueueTransaction.mockResolvedValue('job-1');
+
+      const dto: CreateTransactionDto = {
+        accountId: 'acc-1',
+        type: TransactionType.DEPOSIT,
+        amount: 100,
+      };
+
+      const result = await service.create(dto, 'user-1', 'USER');
+
+      expect(mockAccountRepo.findOne).toHaveBeenCalledWith({
+        where: { id: 'acc-1', active: true },
+      });
+      expect(mockQueueService.enqueueTransaction).toHaveBeenCalledWith(dto);
+      expect(result).toEqual({ jobId: 'job-1', status: 'PENDING' });
+    });
+
+    it('deve lançar ForbiddenException quando o usuário não é dono da conta', async () => {
+      const account = {
+        id: 'acc-1',
+        userId: 'user-2',
+        balance: 1000,
+        active: true,
+      };
+      mockAccountRepo.findOne.mockResolvedValue(account);
+
+      const dto: CreateTransactionDto = {
+        accountId: 'acc-1',
+        type: TransactionType.WITHDRAWAL,
+        amount: 100,
+      };
+
+      await expect(service.create(dto, 'user-1', 'USER')).rejects.toThrow(
+        ForbiddenException,
+      );
+      expect(mockQueueService.enqueueTransaction).not.toHaveBeenCalled();
+    });
+
+    it('deve permitir que ADMIN movimente conta de outro usuário', async () => {
+      const account = {
+        id: 'acc-1',
+        userId: 'user-2',
+        balance: 1000,
+        active: true,
+      };
+      mockAccountRepo.findOne.mockResolvedValue(account);
+      mockQueueService.enqueueTransaction.mockResolvedValue('job-1');
+
+      const dto: CreateTransactionDto = {
+        accountId: 'acc-1',
+        type: TransactionType.WITHDRAWAL,
+        amount: 100,
+      };
+
+      const result = await service.create(dto, 'admin-1', 'ADMIN');
+
+      expect(mockQueueService.enqueueTransaction).toHaveBeenCalledWith(dto);
+      expect(result).toEqual({ jobId: 'job-1', status: 'PENDING' });
+    });
+
+    it('deve lançar NotFoundException quando a conta não existe', async () => {
+      mockAccountRepo.findOne.mockResolvedValue(null);
+
+      const dto: CreateTransactionDto = {
+        accountId: 'acc-inexistente',
+        type: TransactionType.DEPOSIT,
+        amount: 100,
+      };
+
+      await expect(service.create(dto, 'user-1', 'USER')).rejects.toThrow(
+        NotFoundException,
       );
       expect(mockQueueService.enqueueTransaction).not.toHaveBeenCalled();
     });
