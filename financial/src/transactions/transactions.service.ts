@@ -35,6 +35,8 @@ export class TransactionsService {
     requestUserId: string,
     requestUserRole: string,
   ): Promise<{ jobId: string; status: string }> {
+    this.assertDistinctAccounts(dto);
+
     // valida se o usuário logado é dono da conta origem
     if (requestUserRole !== 'ADMIN') {
       const account = await this.accountRepo.findOne({
@@ -57,6 +59,8 @@ export class TransactionsService {
 
   // chamado pelo worker em background
   async process(dto: CreateTransactionDto): Promise<Transaction> {
+    this.assertDistinctAccounts(dto);
+
     // queryRunner é o mecanismo de transação do TypeORM
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
@@ -199,5 +203,17 @@ export class TransactionsService {
         .getRawOne();
 
     return { balance: Number(result?.balance || 0) };
+  }
+
+  // Transferir para a própria conta não é permitido: o débito seria sobrescrito pelo crédito
+  private assertDistinctAccounts(dto: CreateTransactionDto): void {
+    if (
+      dto.type === TransactionType.TRANSFER &&
+      dto.targetAccountId === dto.accountId
+    ) {
+      throw new BadRequestException(
+        'Conta destino deve ser diferente da conta de origem',
+      );
+    }
   }
 }
