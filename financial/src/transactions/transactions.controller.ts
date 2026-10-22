@@ -6,11 +6,11 @@ import {
   Body,
   HttpCode,
   HttpStatus,
-  Req,
 } from '@nestjs/common';
 import { TransactionsService } from './transactions.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
-import express from 'express';
+import { CurrentRequester } from '../common/auth/current-requester.decorator';
+import type { Requester } from '../common/auth/requester';
 
 @Controller('transactions')
 export class TransactionsController {
@@ -18,10 +18,11 @@ export class TransactionsController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  create(@Body() dto: CreateTransactionDto, @Req() req: express.Request) {
-    const userId = req.headers['x-user-id'] as string;
-    const userRole = req.headers['x-user-role'] as string;
-    return this.transactionsService.create(dto, userId, userRole);
+  create(
+    @Body() dto: CreateTransactionDto,
+    @CurrentRequester() requester: Requester,
+  ) {
+    return this.transactionsService.create(dto, requester);
   }
 
   @Get('account/:accountId')

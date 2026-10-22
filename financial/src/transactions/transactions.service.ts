@@ -15,6 +15,8 @@ import { Account } from '../accounts/entities/account.entity';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { QueueService } from '../common/queue/queue.service';
 import { RabbitMQService } from '../common/rabbitmq/rabbitmq.service';
+import { canAccess } from '../common/auth/requester';
+import type { Requester } from '../common/auth/requester';
 
 @Injectable()
 export class TransactionsService {
@@ -32,20 +34,19 @@ export class TransactionsService {
   // enfileira e retorna imediatamente
   async create(
     dto: CreateTransactionDto,
-    requestUserId: string,
-    requestUserRole: string,
+    requester: Requester,
   ): Promise<{ jobId: string; status: string }> {
     this.assertDistinctAccounts(dto);
 
-    // valida se o usuário logado é dono da conta origem
-    if (requestUserRole !== 'ADMIN') {
+    // valida se o usuário logado é dono da conta origem — ADMIN não precisa da consulta
+    if (requester.role !== 'ADMIN') {
       const account = await this.accountRepo.findOne({
         where: { id: dto.accountId, active: true },
       });
 
       if (!account) throw new NotFoundException('Conta não encontrada');
 
-      if (account.userId !== requestUserId) {
+      if (!canAccess(requester, account.userId)) {
         throw new ForbiddenException(
           'Você não tem permissão para movimentar esta conta',
         );

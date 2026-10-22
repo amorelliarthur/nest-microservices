@@ -100,7 +100,7 @@ describe('TransactionsService', () => {
         targetAccountId: 'acc-1',
       };
 
-      const promise = service.create(dto, 'user-1', 'USER');
+      const promise = service.create(dto, { id: 'user-1', role: 'USER' });
 
       await expect(promise).rejects.toThrow(BadRequestException);
       await expect(promise).rejects.toThrow(
@@ -125,7 +125,7 @@ describe('TransactionsService', () => {
         amount: 100,
       };
 
-      const result = await service.create(dto, 'user-1', 'USER');
+      const result = await service.create(dto, { id: 'user-1', role: 'USER' });
 
       expect(mockAccountRepo.findOne).toHaveBeenCalledWith({
         where: { id: 'acc-1', active: true },
@@ -149,9 +149,9 @@ describe('TransactionsService', () => {
         amount: 100,
       };
 
-      await expect(service.create(dto, 'user-1', 'USER')).rejects.toThrow(
-        ForbiddenException,
-      );
+      await expect(
+        service.create(dto, { id: 'user-1', role: 'USER' }),
+      ).rejects.toThrow(ForbiddenException);
       expect(mockQueueService.enqueueTransaction).not.toHaveBeenCalled();
     });
 
@@ -171,7 +171,10 @@ describe('TransactionsService', () => {
         amount: 100,
       };
 
-      const result = await service.create(dto, 'admin-1', 'ADMIN');
+      const result = await service.create(dto, {
+        id: 'admin-1',
+        role: 'ADMIN',
+      });
 
       expect(mockQueueService.enqueueTransaction).toHaveBeenCalledWith(dto);
       expect(result).toEqual({ jobId: 'job-1', status: 'PENDING' });
@@ -186,9 +189,9 @@ describe('TransactionsService', () => {
         amount: 100,
       };
 
-      await expect(service.create(dto, 'user-1', 'USER')).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(
+        service.create(dto, { id: 'user-1', role: 'USER' }),
+      ).rejects.toThrow(NotFoundException);
       expect(mockQueueService.enqueueTransaction).not.toHaveBeenCalled();
     });
   });
