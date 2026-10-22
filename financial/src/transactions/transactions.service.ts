@@ -15,6 +15,9 @@ import { Account } from '../accounts/entities/account.entity';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { QueueService } from '../common/queue/queue.service';
 import { RabbitMQService } from '../common/rabbitmq/rabbitmq.service';
+import { assertAccountAccess } from '../accounts/account-access';
+import { canAccess } from '../common/auth/requester';
+import type { Requester } from '../common/auth/requester';
 
 @Injectable()
 export class TransactionsService {
@@ -32,24 +35,21 @@ export class TransactionsService {
   // enfileira e retorna imediatamente
   async create(
     dto: CreateTransactionDto,
-    requestUserId: string,
-    requestUserRole: string,
+    requester: Requester,
   ): Promise<{ jobId: string; status: string }> {
     this.assertDistinctAccounts(dto);
 
-    // valida se o usuário logado é dono da conta origem
-    if (requestUserRole !== 'ADMIN') {
-      const account = await this.accountRepo.findOne({
-        where: { id: dto.accountId, active: true },
-      });
+    // valida se a conta origem existe e se o usuário logado pode movimentá-la
+    const account = await this.accountRepo.findOne({
+      where: { id: dto.accountId, active: true },
+    });
 
-      if (!account) throw new NotFoundException('Conta não encontrada');
+    if (!account) throw new NotFoundException('Conta não encontrada');
 
-      if (account.userId !== requestUserId) {
-        throw new ForbiddenException(
-          'Você não tem permissão para movimentar esta conta',
-        );
-      }
+    if (!canAccess(requester, account.userId)) {
+      throw new ForbiddenException(
+        'Você não tem permissão para movimentar esta conta',
+      );
     }
 
     const jobId = await this.queueService.enqueueTransaction(dto);
@@ -176,7 +176,12 @@ export class TransactionsService {
   }
 
   // extrato com query otimizada pelo índice composto
-  async findByAccount(accountId: string): Promise<Transaction[]> {
+  async findByAccount(
+    accountId: string,
+    requester: Requester,
+  ): Promise<Transaction[]> {
+    await this.assertCanReadAccount(accountId, requester);
+
     return this.transactionRepo.find({
       where: { accountId },
       order: { createdAt: 'DESC' },
@@ -184,7 +189,12 @@ export class TransactionsService {
   }
 
   // saldo calculado via query SQL pura — exemplo de query avançada
-  async getBalance(accountId: string): Promise<{ balance: number }> {
+  async getBalance(
+    accountId: string,
+    requester: Requester,
+  ): Promise<{ balance: number }> {
+    await this.assertCanReadAccount(accountId, requester);
+
     const result: { balance: string | null } | undefined =
       await this.transactionRepo
         .createQueryBuilder('t')
@@ -203,6 +213,17 @@ export class TransactionsService {
         .getRawOne();
 
     return { balance: Number(result?.balance || 0) };
+  }
+
+  // Confere o dono antes de qualquer consulta às transações da conta
+  private async assertCanReadAccount(
+    accountId: string,
+    requester: Requester,
+  ): Promise<void> {
+    const account = await this.accountRepo.findOne({
+      where: { id: accountId },
+    });
+    assertAccountAccess(account, requester);
   }
 
   // Transferir para a própria conta não é permitido: o débito seria sobrescrito pelo crédito

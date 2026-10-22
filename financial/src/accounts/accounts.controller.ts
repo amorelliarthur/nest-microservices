@@ -7,12 +7,13 @@ import {
   Body,
   HttpCode,
   HttpStatus,
-  Req,
   ForbiddenException,
 } from '@nestjs/common';
-import type { Request } from 'express';
 import { AccountsService } from './accounts.service';
 import { CreateAccountDto } from './dto/create-account.dto';
+import { CurrentRequester } from '../common/auth/current-requester.decorator';
+import { canAccess } from '../common/auth/requester';
+import type { Requester } from '../common/auth/requester';
 
 @Controller('accounts')
 export class AccountsController {
@@ -20,12 +21,12 @@ export class AccountsController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  create(@Body() dto: CreateAccountDto, @Req() req: Request) {
-    const userId = req.headers['x-user-id'] as string;
-    const role = req.headers['x-user-role'] as string;
-
+  create(
+    @Body() dto: CreateAccountDto,
+    @CurrentRequester() requester: Requester,
+  ) {
     // só o dono do token ou ADMIN pode criar conta para um userId
-    if (role !== 'ADMIN' && dto.userId !== userId) {
+    if (!canAccess(requester, dto.userId)) {
       throw new ForbiddenException('Você só pode criar contas para você mesmo');
     }
 
@@ -33,18 +34,21 @@ export class AccountsController {
   }
 
   @Get('user/:userId')
-  findByUser(@Param('userId') userId: string) {
-    return this.accountsService.findByUser(userId);
+  findByUser(
+    @Param('userId') userId: string,
+    @CurrentRequester() requester: Requester,
+  ) {
+    return this.accountsService.findByUser(userId, requester);
   }
 
   @Get(':id')
-  findById(@Param('id') id: string) {
-    return this.accountsService.findById(id);
+  findById(@Param('id') id: string, @CurrentRequester() requester: Requester) {
+    return this.accountsService.findById(id, requester);
   }
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  remove(@Param('id') id: string) {
-    return this.accountsService.remove(id);
+  remove(@Param('id') id: string, @CurrentRequester() requester: Requester) {
+    return this.accountsService.remove(id, requester);
   }
 }
