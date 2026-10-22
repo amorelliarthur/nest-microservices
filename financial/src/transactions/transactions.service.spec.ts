@@ -79,6 +79,33 @@ describe('TransactionsService', () => {
 
   afterEach(() => jest.resetAllMocks());
 
+  describe('create()', () => {
+    it('deve rejeitar transferência para a mesma conta sem enfileirar', async () => {
+      const account = {
+        id: 'acc-1',
+        userId: 'user-1',
+        balance: 1000,
+        active: true,
+      };
+      mockAccountRepo.findOne.mockResolvedValue(account);
+
+      const dto: CreateTransactionDto = {
+        accountId: 'acc-1',
+        type: TransactionType.TRANSFER,
+        amount: 100,
+        targetAccountId: 'acc-1',
+      };
+
+      const promise = service.create(dto, 'user-1', 'USER');
+
+      await expect(promise).rejects.toThrow(BadRequestException);
+      await expect(promise).rejects.toThrow(
+        'Conta destino deve ser diferente da conta de origem',
+      );
+      expect(mockQueueService.enqueueTransaction).not.toHaveBeenCalled();
+    });
+  });
+
   describe('process()', () => {
     describe('DEPOSIT', () => {
       it('deve incrementar o saldo da conta', async () => {
@@ -154,6 +181,23 @@ describe('TransactionsService', () => {
     });
 
     describe('TRANSFER', () => {
+      it('deve rejeitar transferência para a mesma conta sem abrir transação no banco', async () => {
+        const dto: CreateTransactionDto = {
+          accountId: 'acc-1',
+          type: TransactionType.TRANSFER,
+          amount: 100,
+          targetAccountId: 'acc-1',
+        };
+
+        const promise = service.process(dto);
+
+        await expect(promise).rejects.toThrow(BadRequestException);
+        await expect(promise).rejects.toThrow(
+          'Conta destino deve ser diferente da conta de origem',
+        );
+        expect(mockDataSource.createQueryRunner).not.toHaveBeenCalled();
+      });
+
       it('deve debitar da conta de origem e creditar na conta de destino', async () => {
         const sourceAccount = {
           id: 'acc-1',
