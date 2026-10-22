@@ -41,6 +41,12 @@ export class AccountsController {
     return this.accountsService.findByUser(userId, requester);
   }
 
+  // Declarada antes de ':id': senão "me" seria tratado como id de conta
+  @Get('me')
+  findMine(@CurrentRequester() requester: Requester) {
+    return this.accountsService.findByUser(requester.id, requester);
+  }
+
   @Get(':id')
   findById(@Param('id') id: string, @CurrentRequester() requester: Requester) {
     return this.accountsService.findById(id, requester);
