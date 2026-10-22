@@ -15,6 +15,7 @@ import { Account } from '../accounts/entities/account.entity';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { QueueService } from '../common/queue/queue.service';
 import { RabbitMQService } from '../common/rabbitmq/rabbitmq.service';
+import { assertAccountAccess } from '../accounts/account-access';
 import { canAccess } from '../common/auth/requester';
 import type { Requester } from '../common/auth/requester';
 
@@ -177,7 +178,12 @@ export class TransactionsService {
   }
 
   // extrato com query otimizada pelo índice composto
-  async findByAccount(accountId: string): Promise<Transaction[]> {
+  async findByAccount(
+    accountId: string,
+    requester: Requester,
+  ): Promise<Transaction[]> {
+    await this.assertCanReadAccount(accountId, requester);
+
     return this.transactionRepo.find({
       where: { accountId },
       order: { createdAt: 'DESC' },
@@ -185,7 +191,12 @@ export class TransactionsService {
   }
 
   // saldo calculado via query SQL pura — exemplo de query avançada
-  async getBalance(accountId: string): Promise<{ balance: number }> {
+  async getBalance(
+    accountId: string,
+    requester: Requester,
+  ): Promise<{ balance: number }> {
+    await this.assertCanReadAccount(accountId, requester);
+
     const result: { balance: string | null } | undefined =
       await this.transactionRepo
         .createQueryBuilder('t')
@@ -204,6 +215,17 @@ export class TransactionsService {
         .getRawOne();
 
     return { balance: Number(result?.balance || 0) };
+  }
+
+  // Confere o dono antes de qualquer consulta às transações da conta
+  private async assertCanReadAccount(
+    accountId: string,
+    requester: Requester,
+  ): Promise<void> {
+    const account = await this.accountRepo.findOne({
+      where: { id: accountId },
+    });
+    assertAccountAccess(account, requester);
   }
 
   // Transferir para a própria conta não é permitido: o débito seria sobrescrito pelo crédito

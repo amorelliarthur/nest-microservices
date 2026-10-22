@@ -34,18 +34,21 @@ export class AccountsController {
   }
 
   @Get('user/:userId')
-  findByUser(@Param('userId') userId: string) {
-    return this.accountsService.findByUser(userId);
+  findByUser(
+    @Param('userId') userId: string,
+    @CurrentRequester() requester: Requester,
+  ) {
+    return this.accountsService.findByUser(userId, requester);
   }
 
   @Get(':id')
-  findById(@Param('id') id: string) {
-    return this.accountsService.findById(id);
+  findById(@Param('id') id: string, @CurrentRequester() requester: Requester) {
+    return this.accountsService.findById(id, requester);
   }
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  remove(@Param('id') id: string) {
-    return this.accountsService.remove(id);
+  remove(@Param('id') id: string, @CurrentRequester() requester: Requester) {
+    return this.accountsService.remove(id, requester);
   }
 }

@@ -367,4 +367,97 @@ describe('TransactionsService', () => {
       });
     });
   });
+
+  describe('findByAccount()', () => {
+    it('deve retornar o extrato quando o usuário é dono da conta', async () => {
+      const account = {
+        id: 'acc-1',
+        userId: 'user-1',
+        balance: 1000,
+        active: true,
+      };
+      const transactions = [{ id: 'tx-1', accountId: 'acc-1' }];
+      mockAccountRepo.findOne.mockResolvedValue(account);
+      mockTransactionRepo.find.mockResolvedValue(transactions);
+
+      const result = await service.findByAccount('acc-1', {
+        id: 'user-1',
+        role: 'USER',
+      });
+
+      expect(result).toBe(transactions);
+    });
+
+    it('deve lançar NotFoundException para conta de outro usuário sem consultar as transações', async () => {
+      const account = {
+        id: 'acc-1',
+        userId: 'user-2',
+        balance: 1000,
+        active: true,
+      };
+      mockAccountRepo.findOne.mockResolvedValue(account);
+
+      const promise = service.findByAccount('acc-1', {
+        id: 'user-1',
+        role: 'USER',
+      });
+
+      await expect(promise).rejects.toThrow(NotFoundException);
+      await expect(promise).rejects.toThrow('Conta não encontrada');
+      expect(mockTransactionRepo.find).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getBalance()', () => {
+    const mockQueryBuilder = {
+      select: jest.fn(),
+      where: jest.fn(),
+      setParameter: jest.fn(),
+      getRawOne: jest.fn(),
+    };
+
+    beforeEach(() => {
+      mockQueryBuilder.select.mockReturnValue(mockQueryBuilder);
+      mockQueryBuilder.where.mockReturnValue(mockQueryBuilder);
+      mockQueryBuilder.setParameter.mockReturnValue(mockQueryBuilder);
+      mockTransactionRepo.createQueryBuilder.mockReturnValue(mockQueryBuilder);
+    });
+
+    it('deve retornar o saldo quando o usuário é dono da conta', async () => {
+      const account = {
+        id: 'acc-1',
+        userId: 'user-1',
+        balance: 700,
+        active: true,
+      };
+      mockAccountRepo.findOne.mockResolvedValue(account);
+      mockQueryBuilder.getRawOne.mockResolvedValue({ balance: '700.00' });
+
+      const result = await service.getBalance('acc-1', {
+        id: 'user-1',
+        role: 'USER',
+      });
+
+      expect(result).toEqual({ balance: 700 });
+    });
+
+    it('deve lançar NotFoundException para conta de outro usuário sem consultar as transações', async () => {
+      const account = {
+        id: 'acc-1',
+        userId: 'user-2',
+        balance: 700,
+        active: true,
+      };
+      mockAccountRepo.findOne.mockResolvedValue(account);
+
+      const promise = service.getBalance('acc-1', {
+        id: 'user-1',
+        role: 'USER',
+      });
+
+      await expect(promise).rejects.toThrow(NotFoundException);
+      await expect(promise).rejects.toThrow('Conta não encontrada');
+      expect(mockTransactionRepo.createQueryBuilder).not.toHaveBeenCalled();
+    });
+  });
 });

@@ -26,12 +26,18 @@ export class TransactionsController {
   }
 
   @Get('account/:accountId')
-  findByAccount(@Param('accountId') accountId: string) {
-    return this.transactionsService.findByAccount(accountId);
+  findByAccount(
+    @Param('accountId') accountId: string,
+    @CurrentRequester() requester: Requester,
+  ) {
+    return this.transactionsService.findByAccount(accountId, requester);
   }
 
   @Get('account/:accountId/balance')
-  getBalance(@Param('accountId') accountId: string) {
-    return this.transactionsService.getBalance(accountId);
+  getBalance(
+    @Param('accountId') accountId: string,
+    @CurrentRequester() requester: Requester,
+  ) {
+    return this.transactionsService.getBalance(accountId, requester);
   }
 }
