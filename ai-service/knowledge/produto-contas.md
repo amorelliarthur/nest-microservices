@@ -20,6 +20,10 @@ A conta poupança não é criada automaticamente. Ela precisa ser aberta pelo pr
 
 O saldo de uma conta é atualizado sempre que uma transação é concluída: depósitos aumentam o saldo, e saques e transferências enviadas diminuem o saldo.
 
+## Quem pode ver uma conta
+
+Somente o dono da conta pode ver os dados dela, como saldo e extrato. Administradores do sistema também podem ver qualquer conta.
+
 ## Encerramento de conta
 
-Uma conta pode ser encerrada. A conta encerrada deixa de aparecer na lista de contas do usuário e não pode mais receber nem enviar transações.
+Uma conta pode ser encerrada pelo próprio dono ou por um administrador do sistema. A conta encerrada deixa de aparecer na lista de contas do usuário e não pode mais receber nem enviar transações. O extrato de uma conta encerrada continua disponível para o dono.
