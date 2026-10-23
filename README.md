@@ -784,6 +784,27 @@ node scripts/seed-dev.mjs
 
 Usuários criados (somente para ambiente local): `ana.teste@example.com` e `bruno.teste@example.com`, senha `Teste@123`.
 
+## Admin opcional
+
+O script também pode criar um usuário **ADMIN** local. Ele só é criado se as duas variáveis abaixo estiverem definidas; não há valores padrão no código. Se só uma estiver definida, o script aborta antes de qualquer requisição. Se nenhuma estiver, o admin é pulado.
+
+| Variável | Obrigatória | Descrição |
+| --- | --- | --- |
+| `SEED_ADMIN_EMAIL` | sim (para o admin) | E-mail do admin |
+| `SEED_ADMIN_PASSWORD` | sim (para o admin) | Senha do admin (mínimo de 6 caracteres) |
+| `SEED_ADMIN_NAME` | não | Nome exibido (padrão `Admin`) |
+
+As variáveis podem vir do ambiente ou de um arquivo `.env.seed` na raiz do projeto, que o script lê se existir (variáveis já definidas no ambiente têm prioridade). O `.gitignore` ignora `.env.seed*`, então o arquivo nunca deve ser commitado:
+
+```bash
+# .env.seed (exemplo; use os seus valores)
+SEED_ADMIN_EMAIL=<seu-email-de-admin>
+SEED_ADMIN_PASSWORD=<sua-senha-de-admin>
+SEED_ADMIN_NAME=<nome-opcional>
+```
+
+Como o cadastro público (`POST /user`) sempre cria usuários comuns, o script cadastra o admin pela API e o promove a `ADMIN` direto no MongoDB (via `docker exec` no container `mongodb`), só se ele ainda não for admin. Essa promoção é uma exceção de desenvolvimento. A senha do admin nunca aparece na saída do script.
+
 ---
 
 # Testes

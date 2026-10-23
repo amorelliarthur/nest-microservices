@@ -4,9 +4,41 @@
 // e as transações só são criadas se a CHECKING do usuário ainda não tiver nenhuma.
 //
 // Uso: node scripts/seed-dev.mjs   (GATEWAY_URL opcional, padrão http://localhost:3002)
+//
+// Admin opcional: só é criado se SEED_ADMIN_EMAIL e SEED_ADMIN_PASSWORD estiverem definidas
+// (SEED_ADMIN_NAME é opcional). As variáveis podem vir do ambiente ou de um .env.seed na raiz.
+
+import { execFileSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const ENV_SEED_PATH = join(dirname(fileURLToPath(import.meta.url)), '..', '.env.seed');
+
+// Lê o .env.seed sem dependências; variáveis já definidas no ambiente têm prioridade
+const loadEnvSeed = () => {
+  if (!existsSync(ENV_SEED_PATH)) return false;
+  for (const line of readFileSync(ENV_SEED_PATH, 'utf8').split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const separator = trimmed.indexOf('=');
+    if (separator <= 0) continue;
+    const key = trimmed.slice(0, separator).trim();
+    const value = trimmed
+      .slice(separator + 1)
+      .trim()
+      .replace(/^(['"])(.*)\1$/, '$2');
+    if (process.env[key] === undefined) process.env[key] = value;
+  }
+  return true;
+};
+const envSeedLoaded = loadEnvSeed();
 
 const GATEWAY = process.env.GATEWAY_URL ?? 'http://localhost:3002';
 const PASSWORD = 'Teste@123';
+const ADMIN_PASSWORD_LABEL = '(definida via SEED_ADMIN_PASSWORD)';
+const MONGO_CONTAINER = process.env.MONGO_CONTAINER ?? 'mongodb';
+const MONGO_DB = process.env.MONGO_DB ?? 'user';
 const PAUSE_MS = 300;
 const MAX_REQUESTS = 80; // o gateway limita a 100 req/min por IP
 let requestCount = 0;
@@ -40,6 +72,25 @@ const USERS = [
     cpf: cpfFrom('726104853'),
   },
 ];
+
+// Credenciais do admin só vêm do ambiente: nada de valores padrão no código
+const readAdminConfig = () => {
+  const email = process.env.SEED_ADMIN_EMAIL || undefined;
+  const password = process.env.SEED_ADMIN_PASSWORD || undefined;
+  if (!email && !password) return null;
+  if (!email || !password) {
+    throw new Error(
+      'Defina SEED_ADMIN_EMAIL e SEED_ADMIN_PASSWORD juntas para criar o admin (ou nenhuma das duas para pulá-lo)',
+    );
+  }
+  return {
+    key: 'admin',
+    nome: process.env.SEED_ADMIN_NAME ?? 'Admin',
+    email,
+    password,
+    cpf: cpfFrom('905172634'),
+  };
+};
 
 // Transações da CHECKING de cada usuário; o depósito vem primeiro por causa do saldo
 const TRANSACTIONS = {
@@ -111,31 +162,95 @@ const poll = async (label, fn, { timeoutMs, intervalMs = 1500 }) => {
 // Soma em centavos para evitar erros de ponto flutuante
 const toCents = (value) => Math.round(Number(value) * 100);
 
-const signUpAndLogin = async (user) => {
+// Lê a role do payload do JWT, sem validar a assinatura: serve só para exibir
+const tokenRole = (token) =>
+  JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString()).role;
+
+const signUp = async (user, password) => {
   const { status } = await api('POST', '/user', {
-    body: { nome: user.nome, email: user.email, senha: PASSWORD, cpf: user.cpf },
+    body: { nome: user.nome, email: user.email, senha: password, cpf: user.cpf },
     allow: [409],
   });
   console.log(`- ${user.email}: ${status === 409 ? 'já existia' : 'criado'}`);
+};
 
-  const { data: login } = await api('POST', '/auth/login', {
-    body: { email: user.email, senha: PASSWORD },
+const login = async (user, password) => {
+  const { data: session } = await api('POST', '/auth/login', {
+    body: { email: user.email, senha: password },
   });
-  const { data: me } = await api('GET', '/user/me', { token: login.token });
-  return { token: login.token, userId: me._id ?? me.id };
+  const { data: me } = await api('GET', '/user/me', { token: session.token });
+  return {
+    token: session.token,
+    userId: me._id ?? me.id,
+    role: tokenRole(session.token),
+  };
+};
+
+const signUpAndLogin = async (user) => {
+  await signUp(user, PASSWORD);
+  return login(user, PASSWORD);
+};
+
+// Roda dentro do container; o e-mail chega como variável de ambiente, nunca como parte do código
+const PROMOTE_ADMIN_SCRIPT = `
+const user = db.users.findOne({ email: process.env.SEED_ADMIN_EMAIL, deletedAt: null }, { role: 1 });
+if (!user) print('not-found');
+else if (user.role === 'ADMIN') print('already-admin');
+else {
+  db.users.updateOne({ _id: user._id }, { $set: { role: 'ADMIN' } });
+  print('promoted');
+}
+`;
+
+// O cadastro público sempre cria usuários comuns (por segurança, o body não aceita role),
+// então o primeiro admin é promovido direto no banco. Exceção só de desenvolvimento.
+const promoteToAdmin = (admin) => {
+  const outcome = execFileSync(
+    'docker',
+    [
+      'exec',
+      '-e',
+      'SEED_ADMIN_EMAIL',
+      MONGO_CONTAINER,
+      'mongosh',
+      '--quiet',
+      MONGO_DB,
+      '--eval',
+      PROMOTE_ADMIN_SCRIPT,
+    ],
+    {
+      encoding: 'utf8',
+      env: { ...process.env, SEED_ADMIN_EMAIL: admin.email },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    },
+  ).trim();
+
+  if (outcome === 'not-found') {
+    // 409 no cadastro sem o e-mail no banco: o CPF de seed já pertence a outro usuário
+    throw new ApiError(
+      `Admin ${admin.email} não encontrado no MongoDB para promoção (CPF de seed já usado por outro e-mail?)`,
+    );
+  }
+  if (outcome !== 'promoted' && outcome !== 'already-admin') {
+    throw new ApiError(`Resposta inesperada do mongosh ao promover o admin: ${outcome}`);
+  }
+  console.log(`  role: ${outcome === 'promoted' ? 'promovido a ADMIN' : 'já era ADMIN'}`);
 };
 
 const listAccounts = async (ctx) =>
   (await api('GET', `/financial/accounts/user/${ctx.userId}`, { token: ctx.token }))
     .data;
 
-const ensureAccounts = async (ctx) => {
-  // A CHECKING é criada de forma assíncrona (evento user.created via RabbitMQ)
-  const checking = await poll(
+// A CHECKING é criada de forma assíncrona (evento user.created via RabbitMQ)
+const waitForChecking = (ctx) =>
+  poll(
     `conta CHECKING de ${ctx.email}`,
     async () => (await listAccounts(ctx)).find((a) => a.type === 'CHECKING'),
     { timeoutMs: 15000 },
   );
+
+const ensureAccounts = async (ctx) => {
+  const checking = await waitForChecking(ctx);
 
   const { status } = await api('POST', '/financial/accounts', {
     token: ctx.token,
@@ -217,16 +332,37 @@ const verifyBalances = async (ctx) => {
   );
 };
 
+const seedAdmin = async (admin) => {
+  await signUp(admin, admin.password);
+  promoteToAdmin(admin);
+  // Login só depois da promoção: o authenticate lê a role do banco, então o token já sai ADMIN
+  const session = await login(admin, admin.password);
+  const ctx = { ...admin, ...session, senha: ADMIN_PASSWORD_LABEL };
+  await waitForChecking(ctx);
+  return ctx;
+};
+
 const main = async () => {
-  console.log(`Gateway: ${GATEWAY}\n`);
+  // Valida as variáveis do admin antes de qualquer requisição
+  const admin = readAdminConfig();
+  console.log(`Gateway: ${GATEWAY}`);
+  if (envSeedLoaded) console.log('Variáveis carregadas de .env.seed');
+  console.log('');
   const results = [];
 
   for (const user of USERS) {
     const session = await signUpAndLogin(user);
-    const ctx = { ...user, ...session };
+    const ctx = { ...user, ...session, senha: PASSWORD };
     const accounts = await ensureAccounts(ctx);
     const created = await seedTransactions(ctx, accounts);
     results.push({ ctx, created });
+  }
+
+  if (admin) {
+    // Admin sem transações: só a CHECKING criada pelo evento de cadastro
+    results.push({ ctx: await seedAdmin(admin), created: false });
+  } else {
+    console.log('- admin: pulado (defina SEED_ADMIN_EMAIL e SEED_ADMIN_PASSWORD para criá-lo)');
   }
 
   console.log('\nAguardando o processamento das transações (BullMQ)...');
@@ -238,7 +374,8 @@ const main = async () => {
       rows.push({
         nome: ctx.nome,
         email: ctx.email,
-        senha: PASSWORD,
+        senha: ctx.senha,
+        role: ctx.role,
         userId: ctx.userId,
         contaId: account.id,
         tipo: account.type,
