@@ -474,6 +474,7 @@ GEMINI_MODEL=gemini-3.5-flash-lite
 GEMINI_FALLBACK_MODEL=gemini-3.1-flash-lite
 FINANCIAL_SERVER=http://localhost:3004
 FINANCIAL_TIMEOUT_MS=3000
+DATABASE_URL=postgres://admin:admin@localhost:5432/ai
 ```
 
 O `GEMINI_FALLBACK_MODEL` é opcional: sem ele, o serviço usa apenas o modelo principal.
@@ -535,7 +536,7 @@ docker compose down -v
 
 > **Atenção:** o `-v` remove os volumes e **apaga todos os dados** dos bancos.
 
-## Migrations (financial-service)
+## Migrations
 
 O `docker compose` sobe o PostgreSQL, mas as tabelas precisam ser criadas
 rodando as migrations manualmente na primeira vez:
@@ -543,6 +544,14 @@ rodando as migrations manualmente na primeira vez:
 ```bash
 cd financial
 npm run migration:run
+```
+
+No ai-service, as migrations também criam a extensão `vector` e a tabela
+`knowledge_chunks` no banco `ai`:
+
+```bash
+cd ai-service
+npm run migrate:up
 ```
 
 ---
