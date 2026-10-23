@@ -518,6 +518,23 @@ Para conferir se os containers subiram:
 docker compose ps
 ```
 
+Os dados de PostgreSQL, MongoDB, Redis e RabbitMQ ficam em volumes nomeados
+(`postgres_data`, `mongodb_data`, `redis_data` e `rabbitmq_data`) e sobrevivem
+à recriação dos containers (`docker compose down` seguido de `up`).
+
+O PostgreSQL usa a imagem `pgvector/pgvector`, que já traz a extensão de vetores
+usada pelo RAG do ai-service. Na primeira inicialização, com o volume vazio, os
+scripts de `postgres/init` criam o banco `ai` do ai-service, ao lado do
+`financeiro`.
+
+Para apagar tudo e começar do zero:
+
+```bash
+docker compose down -v
+```
+
+> **Atenção:** o `-v` remove os volumes e **apaga todos os dados** dos bancos.
+
 ## Migrations (financial-service)
 
 O `docker compose` sobe o PostgreSQL, mas as tabelas precisam ser criadas
