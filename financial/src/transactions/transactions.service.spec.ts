@@ -1,7 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
-import { BadRequestException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { TransactionsService } from './transactions.service';
 import { Transaction, TransactionType } from './entities/transaction.entity';
 import { Account } from '../accounts/entities/account.entity';
@@ -79,6 +83,134 @@ describe('TransactionsService', () => {
 
   afterEach(() => jest.resetAllMocks());
 
+  describe('create()', () => {
+    it('deve rejeitar transferência para a mesma conta sem enfileirar', async () => {
+      const account = {
+        id: 'acc-1',
+        userId: 'user-1',
+        balance: 1000,
+        active: true,
+      };
+      mockAccountRepo.findOne.mockResolvedValue(account);
+
+      const dto: CreateTransactionDto = {
+        accountId: 'acc-1',
+        type: TransactionType.TRANSFER,
+        amount: 100,
+        targetAccountId: 'acc-1',
+      };
+
+      const promise = service.create(dto, { id: 'user-1', role: 'USER' });
+
+      await expect(promise).rejects.toThrow(BadRequestException);
+      await expect(promise).rejects.toThrow(
+        'Conta destino deve ser diferente da conta de origem',
+      );
+      expect(mockQueueService.enqueueTransaction).not.toHaveBeenCalled();
+    });
+
+    it('deve enfileirar quando o usuário é dono da conta', async () => {
+      const account = {
+        id: 'acc-1',
+        userId: 'user-1',
+        balance: 1000,
+        active: true,
+      };
+      mockAccountRepo.findOne.mockResolvedValue(account);
+      mockQueueService.enqueueTransaction.mockResolvedValue('job-1');
+
+      const dto: CreateTransactionDto = {
+        accountId: 'acc-1',
+        type: TransactionType.DEPOSIT,
+        amount: 100,
+      };
+
+      const result = await service.create(dto, { id: 'user-1', role: 'USER' });
+
+      expect(mockAccountRepo.findOne).toHaveBeenCalledWith({
+        where: { id: 'acc-1', active: true },
+      });
+      expect(mockQueueService.enqueueTransaction).toHaveBeenCalledWith(dto);
+      expect(result).toEqual({ jobId: 'job-1', status: 'PENDING' });
+    });
+
+    it('deve lançar ForbiddenException quando o usuário não é dono da conta', async () => {
+      const account = {
+        id: 'acc-1',
+        userId: 'user-2',
+        balance: 1000,
+        active: true,
+      };
+      mockAccountRepo.findOne.mockResolvedValue(account);
+
+      const dto: CreateTransactionDto = {
+        accountId: 'acc-1',
+        type: TransactionType.WITHDRAWAL,
+        amount: 100,
+      };
+
+      await expect(
+        service.create(dto, { id: 'user-1', role: 'USER' }),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockQueueService.enqueueTransaction).not.toHaveBeenCalled();
+    });
+
+    it('deve permitir que ADMIN movimente conta de outro usuário', async () => {
+      const account = {
+        id: 'acc-1',
+        userId: 'user-2',
+        balance: 1000,
+        active: true,
+      };
+      mockAccountRepo.findOne.mockResolvedValue(account);
+      mockQueueService.enqueueTransaction.mockResolvedValue('job-1');
+
+      const dto: CreateTransactionDto = {
+        accountId: 'acc-1',
+        type: TransactionType.WITHDRAWAL,
+        amount: 100,
+      };
+
+      const result = await service.create(dto, {
+        id: 'admin-1',
+        role: 'ADMIN',
+      });
+
+      expect(mockQueueService.enqueueTransaction).toHaveBeenCalledWith(dto);
+      expect(result).toEqual({ jobId: 'job-1', status: 'PENDING' });
+    });
+
+    it('deve lançar NotFoundException quando a conta não existe', async () => {
+      mockAccountRepo.findOne.mockResolvedValue(null);
+
+      const dto: CreateTransactionDto = {
+        accountId: 'acc-inexistente',
+        type: TransactionType.DEPOSIT,
+        amount: 100,
+      };
+
+      await expect(
+        service.create(dto, { id: 'user-1', role: 'USER' }),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockQueueService.enqueueTransaction).not.toHaveBeenCalled();
+    });
+
+    it('deve lançar NotFoundException quando ADMIN movimenta conta inexistente, sem enfileirar', async () => {
+      mockAccountRepo.findOne.mockResolvedValue(null);
+
+      const dto: CreateTransactionDto = {
+        accountId: 'acc-inexistente',
+        type: TransactionType.DEPOSIT,
+        amount: 100,
+      };
+
+      await expect(
+        service.create(dto, { id: 'admin-1', role: 'ADMIN' }),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockQueueService.enqueueTransaction).not.toHaveBeenCalled();
+    });
+  });
+
   describe('process()', () => {
     describe('DEPOSIT', () => {
       it('deve incrementar o saldo da conta', async () => {
@@ -154,6 +286,23 @@ describe('TransactionsService', () => {
     });
 
     describe('TRANSFER', () => {
+      it('deve rejeitar transferência para a mesma conta sem abrir transação no banco', async () => {
+        const dto: CreateTransactionDto = {
+          accountId: 'acc-1',
+          type: TransactionType.TRANSFER,
+          amount: 100,
+          targetAccountId: 'acc-1',
+        };
+
+        const promise = service.process(dto);
+
+        await expect(promise).rejects.toThrow(BadRequestException);
+        await expect(promise).rejects.toThrow(
+          'Conta destino deve ser diferente da conta de origem',
+        );
+        expect(mockDataSource.createQueryRunner).not.toHaveBeenCalled();
+      });
+
       it('deve debitar da conta de origem e creditar na conta de destino', async () => {
         const sourceAccount = {
           id: 'acc-1',
@@ -231,6 +380,99 @@ describe('TransactionsService', () => {
         await expect(promise).rejects.toThrow('Saldo insuficiente');
         expect(mockQueryRunner.rollbackTransaction).toHaveBeenCalledTimes(1);
       });
+    });
+  });
+
+  describe('findByAccount()', () => {
+    it('deve retornar o extrato quando o usuário é dono da conta', async () => {
+      const account = {
+        id: 'acc-1',
+        userId: 'user-1',
+        balance: 1000,
+        active: true,
+      };
+      const transactions = [{ id: 'tx-1', accountId: 'acc-1' }];
+      mockAccountRepo.findOne.mockResolvedValue(account);
+      mockTransactionRepo.find.mockResolvedValue(transactions);
+
+      const result = await service.findByAccount('acc-1', {
+        id: 'user-1',
+        role: 'USER',
+      });
+
+      expect(result).toBe(transactions);
+    });
+
+    it('deve lançar NotFoundException para conta de outro usuário sem consultar as transações', async () => {
+      const account = {
+        id: 'acc-1',
+        userId: 'user-2',
+        balance: 1000,
+        active: true,
+      };
+      mockAccountRepo.findOne.mockResolvedValue(account);
+
+      const promise = service.findByAccount('acc-1', {
+        id: 'user-1',
+        role: 'USER',
+      });
+
+      await expect(promise).rejects.toThrow(NotFoundException);
+      await expect(promise).rejects.toThrow('Conta não encontrada');
+      expect(mockTransactionRepo.find).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getBalance()', () => {
+    const mockQueryBuilder = {
+      select: jest.fn(),
+      where: jest.fn(),
+      setParameter: jest.fn(),
+      getRawOne: jest.fn(),
+    };
+
+    beforeEach(() => {
+      mockQueryBuilder.select.mockReturnValue(mockQueryBuilder);
+      mockQueryBuilder.where.mockReturnValue(mockQueryBuilder);
+      mockQueryBuilder.setParameter.mockReturnValue(mockQueryBuilder);
+      mockTransactionRepo.createQueryBuilder.mockReturnValue(mockQueryBuilder);
+    });
+
+    it('deve retornar o saldo quando o usuário é dono da conta', async () => {
+      const account = {
+        id: 'acc-1',
+        userId: 'user-1',
+        balance: 700,
+        active: true,
+      };
+      mockAccountRepo.findOne.mockResolvedValue(account);
+      mockQueryBuilder.getRawOne.mockResolvedValue({ balance: '700.00' });
+
+      const result = await service.getBalance('acc-1', {
+        id: 'user-1',
+        role: 'USER',
+      });
+
+      expect(result).toEqual({ balance: 700 });
+    });
+
+    it('deve lançar NotFoundException para conta de outro usuário sem consultar as transações', async () => {
+      const account = {
+        id: 'acc-1',
+        userId: 'user-2',
+        balance: 700,
+        active: true,
+      };
+      mockAccountRepo.findOne.mockResolvedValue(account);
+
+      const promise = service.getBalance('acc-1', {
+        id: 'user-1',
+        role: 'USER',
+      });
+
+      await expect(promise).rejects.toThrow(NotFoundException);
+      await expect(promise).rejects.toThrow('Conta não encontrada');
+      expect(mockTransactionRepo.createQueryBuilder).not.toHaveBeenCalled();
     });
   });
 });

@@ -4,6 +4,7 @@ import { RedisService } from '../redis/redis.service';
 import { TransactionsService } from '../../transactions/transactions.service';
 import { CreateTransactionDto } from '../../transactions/dto/create-transaction.dto';
 import { TRANSACTION_QUEUE } from './queue.service';
+import { toJobError } from './job-error';
 
 @Injectable()
 export class TransactionWorker implements OnModuleInit, OnModuleDestroy {
@@ -21,7 +22,11 @@ export class TransactionWorker implements OnModuleInit, OnModuleDestroy {
         console.log(
           `[Queue] processando job ${job.id} — tipo: ${job.data.type}`,
         );
-        await this.transactionsService.process(job.data);
+        try {
+          await this.transactionsService.process(job.data);
+        } catch (error) {
+          throw toJobError(error);
+        }
         console.log(`[Queue] job ${job.id} concluído`);
       },
       { connection: this.redisService.getConnectionOptions() },

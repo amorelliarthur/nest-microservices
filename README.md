@@ -580,15 +580,16 @@ Todos os endpoints devem ser acessados via API Gateway.
 
 ## Financial Service
 
-| Método | Endpoint                                      | Descrição                         | Auth |
-| ------ | --------------------------------------------- | --------------------------------- | ---- |
-| POST   | `/financial/accounts`                         | Criar conta                       | ✅   |
-| GET    | `/financial/accounts/user/:userId`            | Listar contas do usuário          | ✅   |
-| GET    | `/financial/accounts/:id`                     | Buscar conta por ID               | ✅   |
-| DELETE | `/financial/accounts/:id`                     | Desativar conta                   | ✅   |
-| POST   | `/financial/transactions`                     | Enfileirar transação (assíncrono) | ✅   |
-| GET    | `/financial/transactions/account/:id`         | Extrato da conta                  | ✅   |
-| GET    | `/financial/transactions/account/:id/balance` | Saldo da conta                    | ✅   |
+| Método | Endpoint                                      | Descrição                               | Auth |
+| ------ | --------------------------------------------- | --------------------------------------- | ---- |
+| POST   | `/financial/accounts`                         | Criar conta                             | ✅   |
+| GET    | `/financial/accounts/me`                      | Listar as contas do usuário autenticado | ✅   |
+| GET    | `/financial/accounts/user/:userId`            | Listar contas do usuário                | ✅   |
+| GET    | `/financial/accounts/:id`                     | Buscar conta por ID                     | ✅   |
+| DELETE | `/financial/accounts/:id`                     | Desativar conta                         | ✅   |
+| POST   | `/financial/transactions`                     | Enfileirar transação (assíncrono)       | ✅   |
+| GET    | `/financial/transactions/account/:id`         | Extrato da conta                        | ✅   |
+| GET    | `/financial/transactions/account/:id/balance` | Saldo da conta                          | ✅   |
 
 ## AI Service
 
