@@ -19,6 +19,7 @@
     "test:cov": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --coverage",
     "test:debug": "node --inspect-brk --experimental-vm-modules -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --config ./test/jest-e2e.json",
+    "test:integration": "node --env-file-if-exists=.env --experimental-vm-modules ./node_modules/jest/bin/jest.js --config ./test/jest-integration.json --runInBand",
     "migrate:up": "node --env-file-if-exists=.env node_modules/node-pg-migrate/bin/node-pg-migrate.js up -m migrations",
     "migrate:down": "node --env-file-if-exists=.env node_modules/node-pg-migrate/bin/node-pg-migrate.js down -m migrations",
     "migrate:create": "node --env-file-if-exists=.env node_modules/node-pg-migrate/bin/node-pg-migrate.js create -m migrations -j sql"
