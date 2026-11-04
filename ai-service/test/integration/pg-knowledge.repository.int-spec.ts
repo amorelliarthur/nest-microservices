@@ -109,4 +109,8 @@ describe('PgKnowledgeRepository (integration)', () => {
     await expect(repository.upsertChunks([])).resolves.toBeUndefined();
     await expect(repository.deleteChunks([])).resolves.toBeUndefined();
   });
+
+  it('reports the dimensions of the embedding column', async () => {
+    await expect(repository.getEmbeddingDimensions()).resolves.toBe(DIMENSIONS);
+  });
 });

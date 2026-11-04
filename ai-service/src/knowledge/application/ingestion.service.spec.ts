@@ -184,4 +184,18 @@ describe('IngestionService', () => {
     expect(repository.upsertCalls).toBe(0);
     expect(repository.deleteCalls).toBe(0);
   });
+
+  it('refuses to ingest when the configured dimensions differ from the database', async () => {
+    const { embeddings, repository, service } = makeSut(
+      new FakeEmbeddingProvider([], 'model-a', 3),
+      new FakeKnowledgeRepository(768),
+    );
+
+    await expect(service.ingest(baseSources)).rejects.toThrow(
+      'EMBEDDING_DIMENSIONS',
+    );
+
+    expect(embeddings.calls).toHaveLength(0);
+    expect(repository.upsertCalls).toBe(0);
+  });
 });

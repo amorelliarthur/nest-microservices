@@ -80,4 +80,12 @@ export class PgKnowledgeRepository implements KnowledgeRepository {
       [keys.map((key) => key.documentId), keys.map((key) => key.section)],
     );
   }
+  // No pgvector, o atttypmod da coluna vector guarda o número de dimensões
+  async getEmbeddingDimensions(): Promise<number> {
+    const { rows } = await this.pool.query<{ dimensions: number }>(
+      `SELECT atttypmod AS dimensions FROM pg_attribute
+       WHERE attrelid = 'knowledge_chunks'::regclass AND attname = 'embedding'`,
+    );
+    return rows[0].dimensions;
+  }
 }

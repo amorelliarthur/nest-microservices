@@ -13,6 +13,8 @@ export class FakeKnowledgeRepository implements KnowledgeRepository {
   upsertCalls = 0;
   deleteCalls = 0;
 
+  constructor(private readonly dimensions = 3) {}
+
   listFingerprints(): Promise<StoredChunkFingerprint[]> {
     return Promise.resolve(
       [...this.chunks.values()].map((chunk) => ({
@@ -34,5 +36,9 @@ export class FakeKnowledgeRepository implements KnowledgeRepository {
     this.deleteCalls++;
     for (const key of keys) this.chunks.delete(keyOf(key));
     return Promise.resolve();
+  }
+
+  getEmbeddingDimensions(): Promise<number> {
+    return Promise.resolve(this.dimensions);
   }
 }

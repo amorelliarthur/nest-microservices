@@ -39,6 +39,14 @@ export class IngestionService {
       toChunks(parseKnowledgeDocument(source.name, source.content)),
     );
 
+    const databaseDimensions = await this.repository.getEmbeddingDimensions();
+    if (databaseDimensions !== this.embeddings.dimensions) {
+      throw new Error(
+        `EMBEDDING_DIMENSIONS is ${this.embeddings.dimensions}, but the database column stores ${databaseDimensions} dimensions. ` +
+          'Changing it requires a new migration and a full re-ingestion.',
+      );
+    }
+
     const stored = new Map(
       (await this.repository.listFingerprints()).map((fingerprint) => [
         keyOf(fingerprint),

@@ -22,6 +22,8 @@ export interface KnowledgeRepository {
   listFingerprints(): Promise<StoredChunkFingerprint[]>;
   upsertChunks(chunks: ChunkToStore[]): Promise<void>;
   deleteChunks(keys: ChunkKey[]): Promise<void>;
+  // Dimensões da coluna embedding no banco: a fonte da verdade é o schema
+  getEmbeddingDimensions(): Promise<number>;
 }
 
 export const KNOWLEDGE_REPOSITORY = Symbol('KNOWLEDGE_REPOSITORY');
