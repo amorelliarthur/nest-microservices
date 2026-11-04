@@ -250,6 +250,19 @@ FallbackLlmProvider
 - **Resposta ao cliente:** `503` para indisponibilidade temporária e `502` para falhas permanentes, sem expor detalhes do provedor
 - **Logs:** falhas temporárias são registradas como `WARN`; falhas permanentes, que exigem ação (modelo ou chave inválidos), como `ERROR`
 
+### Ingestão da base de conhecimento
+
+Os documentos em `ai-service/knowledge/*.md` são divididos em trechos (um por seção), transformados em embeddings e gravados na tabela `knowledge_chunks` do banco `ai`:
+
+```bash
+cd ai-service && npm run migrate:up && npm run ingest
+```
+
+- **Incremental:** só gera embeddings para trechos novos ou alterados (comparando o hash do conteúdo); trechos sem mudança são mantidos e seções removidas dos documentos são apagadas do banco. Rodar de novo sem alterações não chama o provedor de embeddings
+- **Troca de modelo:** se `GEMINI_EMBEDDING_MODEL` mudar, todos os trechos são reprocessados
+- **Dimensões:** antes de ingerir, `EMBEDDING_DIMENSIONS` é conferido contra a coluna `embedding` do banco; mudar esse valor exige uma nova migration e uma re-ingestão completa
+- **Falhas não gravam nada:** um documento inválido ou uma falha do provedor interrompem a ingestão antes de qualquer gravação
+
 ### Limitações conhecidas
 
 - Períodos são calculados em UTC
