@@ -29,7 +29,7 @@ describe('GeminiEmbeddingProvider', () => {
     ]);
     expect(embedContent).toHaveBeenCalledWith({
       model: 'embed-model',
-      contents: ['a', 'b'],
+      contents: [{ parts: [{ text: 'a' }] }, { parts: [{ text: 'b' }] }],
       config: { taskType: 'RETRIEVAL_DOCUMENT', outputDimensionality: 3 },
     });
   });

@@ -20,7 +20,8 @@ export class GeminiEmbeddingProvider implements EmbeddingProvider {
     try {
       response = await this.client.models.embedContent({
         model: this.model,
-        contents: texts,
+        // Cada texto como um conteúdo separado: uma lista de strings vira as partes de UM conteúdo e gera um único vetor
+        contents: texts.map((text) => ({ parts: [{ text }] })),
         config: {
           taskType:
             purpose === 'document' ? 'RETRIEVAL_DOCUMENT' : 'RETRIEVAL_QUERY',
