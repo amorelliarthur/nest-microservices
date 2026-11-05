@@ -49,6 +49,7 @@ describe('AskAssistantUseCase', () => {
     const [request] = llm.requests;
     expect(request.tools?.map((t) => t.name)).toEqual(['get_value']);
     expect(request.system).toContain('2026-10-20');
+    expect(request.system).toContain('search_knowledge');
   });
 
   it('runs the requested tools with the authenticated user and sends the results back', async () => {
