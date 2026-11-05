@@ -2,6 +2,8 @@ import type {
   ChunkKey,
   ChunkToStore,
   KnowledgeRepository,
+  KnowledgeSearchOptions,
+  KnowledgeSearchResult,
   StoredChunkFingerprint,
 } from '../domain/knowledge-repository.port';
 
@@ -12,6 +14,11 @@ export class FakeKnowledgeRepository implements KnowledgeRepository {
   readonly chunks = new Map<string, ChunkToStore>();
   upsertCalls = 0;
   deleteCalls = 0;
+  readonly searchCalls: {
+    embedding: number[];
+    options: KnowledgeSearchOptions;
+  }[] = [];
+  searchResults: KnowledgeSearchResult[] = [];
 
   constructor(private readonly dimensions = 3) {}
 
@@ -40,5 +47,21 @@ export class FakeKnowledgeRepository implements KnowledgeRepository {
 
   getEmbeddingDimensions(): Promise<number> {
     return Promise.resolve(this.dimensions);
+  }
+
+  searchSimilar(
+    embedding: number[],
+    options: KnowledgeSearchOptions,
+  ): Promise<KnowledgeSearchResult[]> {
+    this.searchCalls.push({ embedding, options });
+    return Promise.resolve(
+      this.searchResults
+        .filter(
+          (result) =>
+            options.category === undefined ||
+            result.category === options.category,
+        )
+        .slice(0, options.limit),
+    );
   }
 }
