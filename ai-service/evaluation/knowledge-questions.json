@@ -1,0 +1,52 @@
+[
+  {
+    "question": "Posso transferir dinheiro para a mesma conta?",
+    "expected": [{ "documentId": "produto-transacoes", "section": "Transferência para a mesma conta" }]
+  },
+  {
+    "question": "Qual o valor mínimo de um depósito?",
+    "expected": [{ "documentId": "produto-transacoes", "section": "Valor mínimo de uma transação" }]
+  },
+  {
+    "question": "Por que minha transação ficou pendente?",
+    "expected": [{ "documentId": "produto-transacoes", "section": "Por que a transação aparece como pendente" }]
+  },
+  {
+    "question": "O que acontece se eu tentar sacar sem ter saldo?",
+    "expected": [{ "documentId": "produto-transacoes", "section": "Saldo insuficiente" }]
+  },
+  {
+    "question": "Posso ter duas contas poupança?",
+    "expected": [
+      { "documentId": "produto-contas", "section": "Tipos de conta" },
+      { "documentId": "produto-contas", "section": "Abertura da conta poupança" }
+    ]
+  },
+  {
+    "question": "Outra pessoa consegue ver o meu extrato?",
+    "expected": [{ "documentId": "produto-contas", "section": "Quem pode ver uma conta" }]
+  },
+  {
+    "question": "O assistente pode fazer uma transferência para mim?",
+    "expected": [{ "documentId": "produto-assistente", "section": "O que o assistente não faz" }]
+  },
+  {
+    "question": "Quanto dinheiro devo guardar na reserva de emergência?",
+    "expected": [{ "documentId": "educacao-reserva-de-emergencia", "section": "Quanto guardar na reserva de emergência" }]
+  },
+  {
+    "question": "Como funciona a regra 50/30/20?",
+    "expected": [
+      { "documentId": "educacao-orcamento", "section": "A regra 50/30/20" },
+      { "documentId": "educacao-orcamento", "section": "Como aplicar a regra 50/30/20 na prática" }
+    ]
+  },
+  {
+    "question": "Como descobrir quanto gasto com assinaturas todo mês?",
+    "expected": [{ "documentId": "educacao-orcamento", "section": "Gastos recorrentes" }]
+  },
+  { "question": "Qual o melhor time de futebol do Brasil?", "expected": [] },
+  { "question": "Como faço um bolo de chocolate?", "expected": [] },
+  { "question": "Qual a previsão do tempo para amanhã?", "expected": [] },
+  { "question": "Qual a taxa de juros do cheque especial?", "expected": [] }
+]
