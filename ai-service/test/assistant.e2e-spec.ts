@@ -44,6 +44,7 @@ describe('POST /assistant/ask (e2e)', () => {
       .expect(200)
       .expect({
         answer: 'Você tem uma conta corrente com saldo de R$ 1.500,50.',
+        sources: [],
         toolsUsed: ['list_accounts'],
       });
 
@@ -177,7 +178,7 @@ describe('POST /assistant/ask (e2e)', () => {
             },
           ],
         },
-        'Não, transferências para a mesma conta são recusadas.',
+        'Não, transferências para a mesma conta são recusadas [produto-transacoes#transferencia-para-a-mesma-conta].',
       ],
       financial,
       knowledge,
@@ -189,7 +190,14 @@ describe('POST /assistant/ask (e2e)', () => {
       .send({ question: 'Posso transferir para a mesma conta?' })
       .expect(200)
       .expect({
-        answer: 'Não, transferências para a mesma conta são recusadas.',
+        answer: 'Não, transferências para a mesma conta são recusadas [1].',
+        sources: [
+          {
+            id: 1,
+            document: 'Transações',
+            section: 'Transferência para a mesma conta',
+          },
+        ],
         toolsUsed: ['search_knowledge'],
       });
 

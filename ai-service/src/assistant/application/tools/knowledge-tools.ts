@@ -3,6 +3,7 @@ import type { KnowledgeSearchService } from '../../../knowledge/application/know
 import type { KnowledgeSearchResult } from '../../../knowledge/domain/knowledge-repository.port';
 import { KNOWLEDGE_CATEGORIES } from '../../../knowledge/domain/knowledge.types';
 import { LlmProviderError } from '../../../llm/domain/llm-provider.error';
+import { toSourceId } from '../citations';
 import { defineTool } from './tool';
 import type { Tool } from './tool';
 import { ToolError } from './tool.error';
@@ -29,7 +30,7 @@ export const createKnowledgeTools = (
           'produto = how the system works; educacao = financial education',
         ),
     }),
-    execute: async ({ query, category }) => {
+    execute: async ({ query, category }, context) => {
       let results: KnowledgeSearchResult[];
       try {
         results = await search.search(query, category);
@@ -53,17 +54,19 @@ export const createKnowledgeTools = (
       }
 
       // A distância já cumpriu seu papel no filtro: o modelo recebe só o conteúdo e a origem
-      return {
-        found: true,
-        results: results.map((result) => ({
-          source: {
-            documentId: result.documentId,
-            document: result.documentTitle,
-            section: result.section,
-          },
-          content: result.content,
-        })),
-      };
+      const passages = results.map((result) => ({
+        sourceId: toSourceId(result.documentId, result.section),
+        document: result.documentTitle,
+        section: result.section,
+        content: result.content,
+      }));
+
+      // Só o que a busca devolveu pode ser citado na resposta
+      for (const { sourceId, document, section } of passages) {
+        context.sources?.add({ sourceId, document, section });
+      }
+
+      return { found: true, results: passages };
     },
   }),
 ];

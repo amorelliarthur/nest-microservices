@@ -2,6 +2,7 @@ import { LlmProviderError } from '../../../llm/domain/llm-provider.error';
 import { FakeEmbeddingProvider } from '../../../llm/testing/fake-embedding.provider';
 import { KnowledgeSearchService } from '../../../knowledge/application/knowledge-search.service';
 import { FakeKnowledgeRepository } from '../../../knowledge/testing/fake-knowledge.repository';
+import { SourceCollector } from '../citations';
 import { createKnowledgeTools } from './knowledge-tools';
 import { ToolRegistry } from './tool-registry';
 
@@ -45,15 +46,43 @@ describe('search_knowledge tool', () => {
         found: true,
         results: [
           {
-            source: {
-              documentId: 'produto-transacoes',
-              document: 'Transações',
-              section: 'Transferência para a mesma conta',
-            },
+            sourceId: 'produto-transacoes#transferencia-para-a-mesma-conta',
+            document: 'Transações',
+            section: 'Transferência para a mesma conta',
             content: 'Não é possível transferir para a mesma conta.',
           },
         ],
       },
+    });
+  });
+
+  it('registers the returned passages as citable sources', async () => {
+    const { repository, registry } = makeSut();
+    repository.searchResults = [
+      {
+        documentId: 'produto-transacoes',
+        documentTitle: 'Transações',
+        section: 'Saldo insuficiente',
+        category: 'produto',
+        content: 'O saque é recusado.',
+        distance: 0.26,
+      },
+    ];
+    const sources = new SourceCollector();
+
+    await registry.execute(
+      {
+        id: 'call-1',
+        name: 'search_knowledge',
+        arguments: { query: 'sem saldo' },
+      },
+      { userId: 'user-1', sources },
+    );
+
+    expect(sources.get('produto-transacoes#saldo-insuficiente')).toEqual({
+      sourceId: 'produto-transacoes#saldo-insuficiente',
+      document: 'Transações',
+      section: 'Saldo insuficiente',
     });
   });
 
