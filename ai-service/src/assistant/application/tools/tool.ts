@@ -1,7 +1,10 @@
 import type { z } from 'zod';
+import type { SourceCollector } from '../citations';
 
 export interface ToolContext {
   userId: string;
+  // Fontes que podem ser citadas na resposta desta pergunta
+  sources?: SourceCollector;
 }
 
 export interface Tool {

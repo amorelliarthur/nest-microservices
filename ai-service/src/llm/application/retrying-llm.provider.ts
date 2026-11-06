@@ -1,16 +1,12 @@
 import { Logger } from '@nestjs/common';
-import { LlmProviderError } from '../domain/llm-provider.error';
 import type {
   GenerateRequest,
   GenerateResult,
   LlmProvider,
 } from '../domain/llm-provider.port';
 import type { Sleep } from '../../shared/sleep';
-
-export interface RetryOptions {
-  maxAttempts: number;
-  baseDelayMs: number;
-}
+import { retryWithBackoff } from './retry-with-backoff';
+import type { RetryOptions } from './retry-with-backoff';
 
 export class RetryingLlmProvider implements LlmProvider {
   readonly name: string;
@@ -28,27 +24,12 @@ export class RetryingLlmProvider implements LlmProvider {
     this.name = inner.name;
   }
 
-  async generate(request: GenerateRequest): Promise<GenerateResult> {
-    for (let attempt = 1; ; attempt++) {
-      try {
-        return await this.inner.generate(request);
-      } catch (error) {
-        // Só repete falhas temporárias; erros permanentes e bugs sobem na hora
-        const retryable = error instanceof LlmProviderError && error.retryable;
-        if (!retryable || attempt >= this.options.maxAttempts) throw error;
-
-        const delay = this.delayFor(attempt);
-        this.logger.warn(
-          `Retrying LLM call (attempt ${attempt + 1}/${this.options.maxAttempts}) in ${delay}ms: ${error.message}`,
-        );
-        await this.sleep(delay);
-      }
-    }
-  }
-
-  // Exponencial (base, 2x, 4x...) + jitter de até 50% para espalhar as novas tentativas
-  private delayFor(attempt: number): number {
-    const exponential = this.options.baseDelayMs * 2 ** (attempt - 1);
-    return Math.round(exponential + exponential * 0.5 * this.random());
+  generate(request: GenerateRequest): Promise<GenerateResult> {
+    return retryWithBackoff(() => this.inner.generate(request), this.options, {
+      sleep: this.sleep,
+      random: this.random,
+      logger: this.logger,
+      label: 'LLM call',
+    });
   }
 }

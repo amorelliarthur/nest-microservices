@@ -16,6 +16,21 @@ const getValueTool = defineTool({
     Promise.resolve({ value: `${key}-${userId}` }),
 });
 
+// Tool que registra uma fonte citável, como a search_knowledge faz
+const findDocTool = defineTool({
+  name: 'find_doc',
+  description: 'Finds a document',
+  schema: z.object({}),
+  execute: (_args, context) => {
+    context.sources?.add({
+      sourceId: 'doc#secao',
+      document: 'Documento',
+      section: 'Seção',
+    });
+    return Promise.resolve({ ok: true });
+  },
+});
+
 const toolCall = (
   name: string,
   args: Record<string, unknown>,
@@ -31,7 +46,7 @@ const makeSut = (replies: FakeReply[]) => {
   const llm = new FakeLlmProvider(replies);
   const useCase = new AskAssistantUseCase(
     llm,
-    new ToolRegistry([getValueTool]),
+    new ToolRegistry([getValueTool, findDocTool]),
     () => new Date('2026-10-20T12:00:00Z'),
   );
   return { llm, useCase };
@@ -43,12 +58,17 @@ describe('AskAssistantUseCase', () => {
 
     await expect(useCase.execute('Oi', 'user-1')).resolves.toEqual({
       answer: 'Olá! Como posso ajudar?',
+      sources: [],
       toolsUsed: [],
     });
 
     const [request] = llm.requests;
-    expect(request.tools?.map((t) => t.name)).toEqual(['get_value']);
+    expect(request.tools?.map((t) => t.name)).toEqual([
+      'get_value',
+      'find_doc',
+    ]);
     expect(request.system).toContain('2026-10-20');
+    expect(request.system).toContain('search_knowledge');
   });
 
   it('runs the requested tools with the authenticated user and sends the results back', async () => {
@@ -60,6 +80,7 @@ describe('AskAssistantUseCase', () => {
 
     await expect(useCase.execute('Qual o valor?', 'user-1')).resolves.toEqual({
       answer: 'O valor é a-user-1.',
+      sources: [],
       toolsUsed: ['get_value'],
     });
 
@@ -119,6 +140,28 @@ describe('AskAssistantUseCase', () => {
         content: '{"value":"b-user-1"}',
       }),
     ]);
+  });
+
+  it('replaces the citations of retrieved sources with numbers and lists them', async () => {
+    const { useCase } = makeSut([
+      { toolCalls: [toolCall('find_doc', {})] },
+      'Texto [doc#secao].',
+    ]);
+
+    await expect(useCase.execute('Pergunta', 'user-1')).resolves.toEqual({
+      answer: 'Texto [1].',
+      sources: [{ id: 1, document: 'Documento', section: 'Seção' }],
+      toolsUsed: ['find_doc'],
+    });
+  });
+
+  it('drops citations of sources that were not retrieved', async () => {
+    const { useCase } = makeSut(['Texto [doc#inventada].']);
+
+    const result = await useCase.execute('Pergunta', 'user-1');
+
+    expect(result.answer).toBe('Texto.');
+    expect(result.sources).toEqual([]);
   });
 
   it('stops after the iteration limit', async () => {

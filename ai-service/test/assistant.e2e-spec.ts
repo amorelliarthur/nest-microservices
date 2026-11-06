@@ -3,6 +3,7 @@ import request from 'supertest';
 import type { App } from 'supertest/types';
 import { MAX_ITERATIONS } from '../src/assistant/application/ask-assistant.use-case';
 import { FakeFinancialClient } from '../src/financial/testing/fake-financial.client';
+import { FakeKnowledgeRepository } from '../src/knowledge/testing/fake-knowledge.repository';
 import { LlmProviderError } from '../src/llm/domain/llm-provider.error';
 import type { FakeLlmProvider } from '../src/llm/testing/fake-llm.provider';
 import type { FakeReply } from '../src/llm/testing/fake-llm.provider';
@@ -43,6 +44,7 @@ describe('POST /assistant/ask (e2e)', () => {
       .expect(200)
       .expect({
         answer: 'Você tem uma conta corrente com saldo de R$ 1.500,50.',
+        sources: [],
         toolsUsed: ['list_accounts'],
       });
 
@@ -148,5 +150,63 @@ describe('POST /assistant/ask (e2e)', () => {
       statusCode: 502,
       message: 'The AI service could not process the request.',
     });
+  });
+
+  it('answers questions about the product with the knowledge base', async () => {
+    const knowledge = new FakeKnowledgeRepository();
+    knowledge.searchResults = [
+      {
+        documentId: 'produto-transacoes',
+        documentTitle: 'Transações',
+        section: 'Transferência para a mesma conta',
+        category: 'produto',
+        content: 'Não é possível transferir para a mesma conta.',
+        distance: 0.229,
+      },
+    ];
+    ({ app, llm } = await createTestApp({
+      llmReplies: [
+        {
+          toolCalls: [
+            {
+              id: 'call-1',
+              name: 'search_knowledge',
+              arguments: {
+                query: 'transferir para a mesma conta',
+                category: 'produto',
+              },
+            },
+          ],
+        },
+        'Não, transferências para a mesma conta são recusadas [produto-transacoes#transferencia-para-a-mesma-conta].',
+      ],
+      financial,
+      knowledge,
+    }));
+
+    await request(app.getHttpServer())
+      .post('/assistant/ask')
+      .set(userHeaders('user-1'))
+      .send({ question: 'Posso transferir para a mesma conta?' })
+      .expect(200)
+      .expect({
+        answer: 'Não, transferências para a mesma conta são recusadas [1].',
+        sources: [
+          {
+            id: 1,
+            document: 'Transações',
+            section: 'Transferência para a mesma conta',
+          },
+        ],
+        toolsUsed: ['search_knowledge'],
+      });
+
+    expect(llm.requests[1].messages[2]).toMatchObject({
+      role: 'tool',
+      toolName: 'search_knowledge',
+    });
+    expect(JSON.stringify(llm.requests[1].messages[2])).toContain(
+      'Transferência para a mesma conta',
+    );
   });
 });
