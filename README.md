@@ -218,11 +218,12 @@ pergunta → modelo ──(pede tools?)──não──▶ resposta final
 
 Tools disponíveis (somente leitura):
 
-| Tool                | Descrição                                                            |
-| ------------------- | -------------------------------------------------------------------- |
-| `list_accounts`     | Lista as contas do usuário com tipo e saldo                          |
-| `get_balance`       | Saldo de uma conta do usuário                                        |
-| `list_transactions` | Extrato filtrado por período e tipo, com totais calculados em código |
+| Tool                | Descrição                                                                   |
+| ------------------- | --------------------------------------------------------------------------- |
+| `list_accounts`     | Lista as contas do usuário com tipo e saldo                                 |
+| `get_balance`       | Saldo de uma conta do usuário                                               |
+| `list_transactions` | Extrato filtrado por período e tipo, com totais calculados em código        |
+| `search_knowledge`  | Busca trechos da base de conhecimento sobre o produto e educação financeira |
 
 ### Decisões de segurança e confiabilidade
 
@@ -263,10 +264,49 @@ cd ai-service && npm run migrate:up && npm run ingest
 - **Dimensões:** antes de ingerir, `EMBEDDING_DIMENSIONS` é conferido contra a coluna `embedding` do banco; mudar esse valor exige uma nova migration e uma re-ingestão completa
 - **Falhas não gravam nada:** um documento inválido ou uma falha do provedor interrompem a ingestão antes de qualquer gravação
 
+### Base de conhecimento (RAG)
+
+Para perguntas sobre como o sistema funciona ou sobre conceitos financeiros, o assistente consulta uma base de conhecimento própria em vez de responder com o conhecimento geral do modelo.
+
+- **Documentos:** `ai-service/knowledge/` traz o manual do produto (`produto-*`: contas, transações e o próprio assistente) e textos de educação financeira (`educacao-*`: orçamento e reserva de emergência). Eles descrevem somente comportamentos que o código realmente aplica: ao mudar uma regra do sistema, o documento correspondente é atualizado
+- **Busca:** a pergunta vira um embedding e é comparada aos trechos por distância de cosseno no pgvector, com índice HNSW. A busca pode ser filtrada por categoria (`produto` ou `educacao`) e devolve no máximo 4 trechos
+- **Limite de distância:** trechos acima de `KNOWLEDGE_MAX_DISTANCE` (padrão `0,35`) são descartados. O valor foi medido com o `knowledge:probe`: as respostas certas ficaram até `0,289` e as perguntas sem resposta na base a partir de `0,411`
+- **Tool `search_knowledge`:** o assistente responde sobre o produto apenas com o que a base devolve. Se nada relevante for encontrado, a tool avisa explicitamente e o assistente diz que não encontrou a informação, sem completar com conhecimento geral
+
+Para medir a qualidade da busca com as perguntas de `ai-service/evaluation/knowledge-questions.json` (mostra, para cada pergunta, os trechos mais próximos e suas distâncias, sem aplicar o limite):
+
+```bash
+cd ai-service && npm run knowledge:probe
+```
+
+### Citações
+
+O assistente cita os trechos da base que usou. No texto, cada citação aparece como um número entre colchetes (`[1]`, `[2]`), e o campo `sources` da resposta lista o documento e a seção de cada número:
+
+```json
+{
+  "answer": "Não, transferências para a mesma conta são recusadas [1].",
+  "sources": [
+    {
+      "id": 1,
+      "document": "Transações",
+      "section": "Transferência para a mesma conta"
+    }
+  ],
+  "toolsUsed": ["search_knowledge"]
+}
+```
+
+- **Só fontes reais:** apenas trechos devolvidos pela busca naquela pergunta podem ser citados. Citações de qualquer outra fonte são removidas da resposta e registradas em log como `WARN`, para monitorar fontes inventadas pelo modelo
+- **Numeração:** a ordem segue a primeira aparição no texto, e a mesma fonte citada de novo reaproveita o número
+- **Sem citações:** respostas que não usam a base (como as de saldo e extrato) vêm com `sources: []`
+
 ### Limitações conhecidas
 
 - Períodos são calculados em UTC
-- Cada pergunta é independente (ainda sem memória de conversa)
+- O assistente não tem memória entre perguntas: cada chamada é independente
+- A classificação dos gastos em categorias, quando feita pelo modelo, pode variar entre respostas
+- As citações garantem que toda fonte exibida é real, mas não que toda frase tenha fonte
 - O fallback usa outro modelo do mesmo provedor e não protege contra uma indisponibilidade geral do Gemini
 
 ---
@@ -488,9 +528,10 @@ GEMINI_FALLBACK_MODEL=gemini-3.1-flash-lite
 FINANCIAL_SERVER=http://localhost:3004
 FINANCIAL_TIMEOUT_MS=3000
 DATABASE_URL=postgres://admin:admin@localhost:5432/ai
+KNOWLEDGE_MAX_DISTANCE=0.35
 ```
 
-O `GEMINI_FALLBACK_MODEL` é opcional: sem ele, o serviço usa apenas o modelo principal.
+O `GEMINI_FALLBACK_MODEL` é opcional: sem ele, o serviço usa apenas o modelo principal. O `KNOWLEDGE_MAX_DISTANCE` também é opcional (padrão `0.35`); um valor inválido impede o serviço de subir.
 
 ---
 
@@ -753,6 +794,7 @@ Resposta (resumida):
 ```json
 {
   "answer": "Neste mês você gastou R$ 632,35 ... Transferências feitas para outras contas: R$ 500,00 (Reserva mensal) ...",
+  "sources": [],
   "toolsUsed": ["list_accounts", "list_transactions", "list_transactions"]
 }
 ```
