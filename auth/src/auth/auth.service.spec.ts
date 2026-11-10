@@ -238,6 +238,7 @@ describe('AuthService', () => {
       ['sem role', { id: 'user-1', email: 'user@test.com' }],
       ['sem email', { id: 'user-1', role: 'user' }],
       ['com id vazio', { id: '', email: 'user@test.com', role: 'user' }],
+      ['em formato de string', 'payload-em-string'],
     ])(
       'deve lançar UnauthorizedException sem emitir quando o payload está %s',
       async (_caso, payload) => {

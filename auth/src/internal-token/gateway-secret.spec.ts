@@ -54,6 +54,8 @@ describe('createGatewaySecretVerifier', () => {
   it('deve recusar quando o header vem repetido', () => {
     const verify = createGatewaySecretVerifier(SECRET);
 
+    // o Node junta headers customizados repetidos em uma string
+    expect(verify(`${SECRET}, ${SECRET}`)).toBe(false);
     expect(verify([SECRET, SECRET])).toBe(false);
   });
 });
