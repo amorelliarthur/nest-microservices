@@ -118,15 +118,9 @@ describe('AuthService', () => {
       expect(mockJwtService.verify).toHaveBeenCalledWith(token);
     });
 
-    it('deve incluir o token interno com a identidade do usuário quando token é válido', async () => {
+    it('não deve emitir nem devolver o token interno na validação pública', async () => {
       const token = 'valid-token';
-      const payload = {
-        id: 'user-1',
-        email: 'user@test.com',
-        role: 'user',
-        iat: 1700000000,
-        exp: 1700086400,
-      };
+      const payload = { id: 'user-1', email: 'user@test.com', role: 'user' };
 
       mockRedisService.isBlacklisted.mockResolvedValue(false);
       mockJwtService.verify.mockReturnValue(payload);
@@ -134,13 +128,8 @@ describe('AuthService', () => {
 
       const result = await service.validaToken(token);
 
-      expect(result).toEqual({ ...payload, internalToken: 'internal-token' });
-      // só a identidade vai para o token interno, sem iat/exp do token do cliente
-      expect(mockInternalTokenIssuer.issue).toHaveBeenCalledWith({
-        id: 'user-1',
-        role: 'user',
-        email: 'user@test.com',
-      });
+      expect(result).not.toHaveProperty('internalToken');
+      expect(mockInternalTokenIssuer.issue).not.toHaveBeenCalled();
     });
 
     it('deve lançar UnauthorizedException quando token não é fornecido', async () => {
@@ -181,6 +170,102 @@ describe('AuthService', () => {
       await expect(service.validaToken(token)).rejects.toThrow(
         'Token inválido',
       );
+    });
+  });
+
+  describe('validateForGateway()', () => {
+    it('deve devolver só a identidade e o token interno quando token é válido', async () => {
+      const token = 'valid-token';
+      const payload = {
+        id: 'user-1',
+        email: 'user@test.com',
+        role: 'user',
+        iat: 1700000000,
+        exp: 1700086400,
+      };
+
+      mockRedisService.isBlacklisted.mockResolvedValue(false);
+      mockJwtService.verify.mockReturnValue(payload);
+      mockInternalTokenIssuer.issue.mockReturnValue('internal-token');
+
+      const result = await service.validateForGateway(token);
+
+      // sem iat/exp do token do cliente
+      expect(result).toEqual({
+        id: 'user-1',
+        role: 'user',
+        email: 'user@test.com',
+        internalToken: 'internal-token',
+      });
+      expect(mockRedisService.isBlacklisted).toHaveBeenCalledWith(token);
+      expect(mockInternalTokenIssuer.issue).toHaveBeenCalledWith({
+        id: 'user-1',
+        role: 'user',
+        email: 'user@test.com',
+      });
+    });
+
+    it('deve lançar UnauthorizedException sem emitir quando token não é fornecido', async () => {
+      await expect(service.validateForGateway('')).rejects.toThrow(
+        'Token não fornecido',
+      );
+      expect(mockInternalTokenIssuer.issue).not.toHaveBeenCalled();
+    });
+
+    it('deve lançar UnauthorizedException sem emitir quando token está na blacklist', async () => {
+      mockRedisService.isBlacklisted.mockResolvedValue(true);
+
+      await expect(
+        service.validateForGateway('blacklisted-token'),
+      ).rejects.toThrow(new UnauthorizedException('Token inválido'));
+      expect(mockInternalTokenIssuer.issue).not.toHaveBeenCalled();
+    });
+
+    it('deve lançar UnauthorizedException sem emitir quando token é inválido', async () => {
+      mockRedisService.isBlacklisted.mockResolvedValue(false);
+      mockJwtService.verify.mockImplementation(() => {
+        throw new Error('invalid signature');
+      });
+
+      await expect(
+        service.validateForGateway('tampered-token'),
+      ).rejects.toThrow(new UnauthorizedException('Token inválido'));
+      expect(mockInternalTokenIssuer.issue).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['sem id', { email: 'user@test.com', role: 'user' }],
+      ['sem role', { id: 'user-1', email: 'user@test.com' }],
+      ['sem email', { id: 'user-1', role: 'user' }],
+      ['com id vazio', { id: '', email: 'user@test.com', role: 'user' }],
+    ])(
+      'deve lançar UnauthorizedException sem emitir quando o payload está %s',
+      async (_caso, payload) => {
+        mockRedisService.isBlacklisted.mockResolvedValue(false);
+        mockJwtService.verify.mockReturnValue(payload);
+
+        await expect(service.validateForGateway('valid-token')).rejects.toThrow(
+          new UnauthorizedException('Token inválido'),
+        );
+        expect(mockInternalTokenIssuer.issue).not.toHaveBeenCalled();
+      },
+    );
+
+    it('não deve transformar uma falha ao emitir o token interno em "Token inválido"', async () => {
+      mockRedisService.isBlacklisted.mockResolvedValue(false);
+      mockJwtService.verify.mockReturnValue({
+        id: 'user-1',
+        email: 'user@test.com',
+        role: 'user',
+      });
+      mockInternalTokenIssuer.issue.mockImplementation(() => {
+        throw new Error('falha ao assinar');
+      });
+
+      const result = service.validateForGateway('valid-token');
+
+      await expect(result).rejects.toThrow('falha ao assinar');
+      await expect(result).rejects.not.toBeInstanceOf(UnauthorizedException);
     });
   });
 

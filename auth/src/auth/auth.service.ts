@@ -26,10 +26,16 @@ export interface JwtPayload {
   exp: number;
 }
 
-// resposta do validaToken: o gateway ainda usa id, role e email
-export interface ValidaTokenResult extends JwtPayload {
+// resposta da rota interna: só a identidade e o token interno
+export interface GatewayValidation {
+  id: string;
+  role: string;
+  email: string;
   internalToken: string;
 }
+
+const isNonEmptyString = (value: unknown): value is string =>
+  typeof value === 'string' && value !== '';
 
 @Injectable()
 export class AuthService {
@@ -75,7 +81,30 @@ export class AuthService {
     }
   }
 
-  async validaToken(token: string): Promise<ValidaTokenResult> {
+  // rota pública: não emite o token interno
+  async validaToken(token: string): Promise<JwtPayload> {
+    return this.verifyClientToken(token);
+  }
+
+  // rota interna, só para o gateway (protegida pelo segredo compartilhado)
+  async validateForGateway(token: string): Promise<GatewayValidation> {
+    const { id, role, email } = await this.verifyClientToken(token);
+
+    if (
+      !isNonEmptyString(id) ||
+      !isNonEmptyString(role) ||
+      !isNonEmptyString(email)
+    ) {
+      throw new UnauthorizedException('Token inválido');
+    }
+
+    // fora de qualquer try: uma falha ao emitir não pode virar "Token inválido"
+    const internalToken = this.internalTokenIssuer.issue({ id, role, email });
+
+    return { id, role, email, internalToken };
+  }
+
+  private async verifyClientToken(token: string): Promise<JwtPayload> {
     if (!token) {
       throw new UnauthorizedException('Token não fornecido');
     }
@@ -86,21 +115,11 @@ export class AuthService {
       throw new UnauthorizedException('Token inválido');
     }
 
-    let payload: JwtPayload;
     try {
-      payload = this.jwtService.verify<JwtPayload>(token);
+      return this.jwtService.verify<JwtPayload>(token);
     } catch {
       throw new UnauthorizedException('Token inválido');
     }
-
-    // fora do try: uma falha ao emitir não pode virar "Token inválido"
-    const internalToken = this.internalTokenIssuer.issue({
-      id: payload.id,
-      role: payload.role,
-      email: payload.email,
-    });
-
-    return { ...payload, internalToken };
   }
 
   async logout(token: string): Promise<void> {
