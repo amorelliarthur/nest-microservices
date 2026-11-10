@@ -9,6 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import { RedisService } from '../common/redis/redis.service';
 import { firstValueFrom } from 'rxjs';
 import { LoginDto } from './dto/login.dto';
+import { InternalTokenIssuer } from '../internal-token/internal-token.issuer';
 
 // formato retornado pelo user-service em /user/authenticate
 interface AuthenticatedUser {
@@ -25,6 +26,17 @@ export interface JwtPayload {
   exp: number;
 }
 
+// resposta da rota interna: só a identidade e o token interno
+export interface GatewayValidation {
+  id: string;
+  role: string;
+  email: string;
+  internalToken: string;
+}
+
+const isNonEmptyString = (value: unknown): value is string =>
+  typeof value === 'string' && value !== '';
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -32,6 +44,7 @@ export class AuthService {
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
     private readonly redisService: RedisService,
+    private readonly internalTokenIssuer: InternalTokenIssuer,
   ) {}
 
   async login(dto: LoginDto) {
@@ -68,7 +81,30 @@ export class AuthService {
     }
   }
 
+  // rota pública: não emite o token interno
   async validaToken(token: string): Promise<JwtPayload> {
+    return this.verifyClientToken(token);
+  }
+
+  // rota interna, só para o gateway (protegida pelo segredo compartilhado)
+  async validateForGateway(token: string): Promise<GatewayValidation> {
+    const { id, role, email } = await this.verifyClientToken(token);
+
+    if (
+      !isNonEmptyString(id) ||
+      !isNonEmptyString(role) ||
+      !isNonEmptyString(email)
+    ) {
+      throw new UnauthorizedException('Token inválido');
+    }
+
+    // fora de qualquer try: uma falha ao emitir não pode virar "Token inválido"
+    const internalToken = this.internalTokenIssuer.issue({ id, role, email });
+
+    return { id, role, email, internalToken };
+  }
+
+  private async verifyClientToken(token: string): Promise<JwtPayload> {
     if (!token) {
       throw new UnauthorizedException('Token não fornecido');
     }
