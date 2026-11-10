@@ -9,6 +9,7 @@ import {
 import { of, throwError } from 'rxjs';
 import { AuthService } from './auth.service';
 import { RedisService } from '../common/redis/redis.service';
+import { InternalTokenIssuer } from '../internal-token/internal-token.issuer';
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -31,6 +32,10 @@ describe('AuthService', () => {
     blacklist: jest.fn(),
   };
 
+  const mockInternalTokenIssuer = {
+    issue: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -39,6 +44,7 @@ describe('AuthService', () => {
         { provide: HttpService, useValue: mockHttpService },
         { provide: ConfigService, useValue: mockConfigService },
         { provide: RedisService, useValue: mockRedisService },
+        { provide: InternalTokenIssuer, useValue: mockInternalTokenIssuer },
       ],
     }).compile();
 
@@ -110,6 +116,31 @@ describe('AuthService', () => {
       expect(result).toEqual(payload);
       expect(mockRedisService.isBlacklisted).toHaveBeenCalledWith(token);
       expect(mockJwtService.verify).toHaveBeenCalledWith(token);
+    });
+
+    it('deve incluir o token interno com a identidade do usuário quando token é válido', async () => {
+      const token = 'valid-token';
+      const payload = {
+        id: 'user-1',
+        email: 'user@test.com',
+        role: 'user',
+        iat: 1700000000,
+        exp: 1700086400,
+      };
+
+      mockRedisService.isBlacklisted.mockResolvedValue(false);
+      mockJwtService.verify.mockReturnValue(payload);
+      mockInternalTokenIssuer.issue.mockReturnValue('internal-token');
+
+      const result = await service.validaToken(token);
+
+      expect(result).toEqual({ ...payload, internalToken: 'internal-token' });
+      // só a identidade vai para o token interno, sem iat/exp do token do cliente
+      expect(mockInternalTokenIssuer.issue).toHaveBeenCalledWith({
+        id: 'user-1',
+        role: 'user',
+        email: 'user@test.com',
+      });
     });
 
     it('deve lançar UnauthorizedException quando token não é fornecido', async () => {

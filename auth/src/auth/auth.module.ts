@@ -6,6 +6,8 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { RedisService } from '../common/redis/redis.service';
 import { StringValue } from 'ms';
+import { InternalTokenIssuer } from '../internal-token/internal-token.issuer';
+import { loadInternalPrivateKey } from '../internal-token/internal-keys';
 
 @Module({
   imports: [
@@ -34,6 +36,20 @@ import { StringValue } from 'ms';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, RedisService],
+  providers: [
+    AuthService,
+    RedisService,
+    {
+      // fail fast: sem uma chave válida, o auth não sobe
+      provide: InternalTokenIssuer,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) =>
+        new InternalTokenIssuer(
+          loadInternalPrivateKey(
+            config.get<string>('INTERNAL_JWT_PRIVATE_KEY_B64'),
+          ),
+        ),
+    },
+  ],
 })
 export class AuthModule {}

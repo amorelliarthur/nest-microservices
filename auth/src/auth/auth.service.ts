@@ -9,6 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import { RedisService } from '../common/redis/redis.service';
 import { firstValueFrom } from 'rxjs';
 import { LoginDto } from './dto/login.dto';
+import { InternalTokenIssuer } from '../internal-token/internal-token.issuer';
 
 // formato retornado pelo user-service em /user/authenticate
 interface AuthenticatedUser {
@@ -25,6 +26,11 @@ export interface JwtPayload {
   exp: number;
 }
 
+// resposta do validaToken: o gateway ainda usa id, role e email
+export interface ValidaTokenResult extends JwtPayload {
+  internalToken: string;
+}
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -32,6 +38,7 @@ export class AuthService {
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
     private readonly redisService: RedisService,
+    private readonly internalTokenIssuer: InternalTokenIssuer,
   ) {}
 
   async login(dto: LoginDto) {
@@ -68,7 +75,7 @@ export class AuthService {
     }
   }
 
-  async validaToken(token: string): Promise<JwtPayload> {
+  async validaToken(token: string): Promise<ValidaTokenResult> {
     if (!token) {
       throw new UnauthorizedException('Token não fornecido');
     }
@@ -79,11 +86,21 @@ export class AuthService {
       throw new UnauthorizedException('Token inválido');
     }
 
+    let payload: JwtPayload;
     try {
-      return this.jwtService.verify<JwtPayload>(token);
+      payload = this.jwtService.verify<JwtPayload>(token);
     } catch {
       throw new UnauthorizedException('Token inválido');
     }
+
+    // fora do try: uma falha ao emitir não pode virar "Token inválido"
+    const internalToken = this.internalTokenIssuer.issue({
+      id: payload.id,
+      role: payload.role,
+      email: payload.email,
+    });
+
+    return { ...payload, internalToken };
   }
 
   async logout(token: string): Promise<void> {
