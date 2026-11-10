@@ -148,6 +148,36 @@ describe('AuthMiddleware', () => {
       },
     );
 
+    it.each([
+      ['/auth/login', 'POST'],
+      ['/user', 'POST'],
+      ['/auth/logout', 'POST'],
+    ])(
+      'deve remover os headers internos enviados pelo cliente em %s %s',
+      async (path, method) => {
+        const req = buildRequest({
+          url: path,
+          method,
+          headers: {
+            'x-user-id': 'user-1',
+            'x-user-role': 'ADMIN',
+            'x-user-email': 'arthur@user.br',
+            'x-internal-token': 'token-forjado',
+          },
+        });
+        const res = buildResponse();
+        const next = jest.fn();
+
+        await middleware.use(req, res, next);
+
+        expect(req.headers['x-user-id']).toBeUndefined();
+        expect(req.headers['x-user-role']).toBeUndefined();
+        expect(req.headers['x-user-email']).toBeUndefined();
+        expect(req.headers['x-internal-token']).toBeUndefined();
+        expect(next).toHaveBeenCalled();
+      },
+    );
+
     it('não deve tratar como pública uma rota com mesmo path mas método diferente', async () => {
       // /user é pública apenas para POST — um GET não deve passar direto
       const req = buildRequest({ url: '/user', method: 'GET', headers: {} });
@@ -182,7 +212,12 @@ describe('AuthMiddleware', () => {
       });
       const res = buildResponse();
       const next = jest.fn();
-      const payload = { id: 'user-1', role: 'ADMIN', email: 'arthur@user.br' };
+      const payload = {
+        id: 'user-1',
+        role: 'ADMIN',
+        email: 'arthur@user.br',
+        internalToken: 'token-interno',
+      };
       httpService.post.mockReturnValue(of({ data: payload }));
 
       await middleware.use(req, res, next);
@@ -196,6 +231,64 @@ describe('AuthMiddleware', () => {
       expect(req.headers['x-user-role']).toBe(payload.role);
       expect(req.headers['x-user-email']).toBe(payload.email);
       expect(next).toHaveBeenCalled();
+    });
+
+    it('deve repassar o token interno emitido pelo auth-service', async () => {
+      const req = buildRequest({
+        url: '/financial/accounts/me',
+        method: 'GET',
+        headers: { token: 'token-valido' },
+      });
+      const res = buildResponse();
+      const next = jest.fn();
+      httpService.post.mockReturnValue(
+        of({
+          data: {
+            id: 'user-1',
+            role: 'USER',
+            email: 'arthur@user.br',
+            internalToken: 'token-interno',
+          },
+        }),
+      );
+
+      await middleware.use(req, res, next);
+
+      expect(req.headers['x-internal-token']).toBe('token-interno');
+      expect(next).toHaveBeenCalled();
+    });
+
+    it('deve substituir os headers internos forjados pelo cliente pelos do auth-service', async () => {
+      const req = buildRequest({
+        url: '/financial/accounts/me',
+        method: 'GET',
+        headers: {
+          token: 'token-valido',
+          'x-user-id': 'outro-usuario',
+          'x-user-role': 'ADMIN',
+          'x-user-extra': 'forjado',
+          'x-internal-token': 'token-forjado',
+        },
+      });
+      const res = buildResponse();
+      const next = jest.fn();
+      httpService.post.mockReturnValue(
+        of({
+          data: {
+            id: 'user-1',
+            role: 'USER',
+            email: 'arthur@user.br',
+            internalToken: 'token-interno',
+          },
+        }),
+      );
+
+      await middleware.use(req, res, next);
+
+      expect(req.headers['x-user-id']).toBe('user-1');
+      expect(req.headers['x-user-role']).toBe('USER');
+      expect(req.headers['x-user-extra']).toBeUndefined();
+      expect(req.headers['x-internal-token']).toBe('token-interno');
     });
 
     it('deve retornar 401 quando o auth-service responde com 401 (token inválido)', async () => {

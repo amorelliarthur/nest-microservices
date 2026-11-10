@@ -11,6 +11,10 @@ const PUBLIC_ROUTES = [
   { path: '/auth/logout', method: 'POST' },
 ];
 
+// headers que só o gateway pode definir: os enviados pelo cliente são descartados
+const INTERNAL_HEADER_PREFIX = 'x-user-';
+const INTERNAL_TOKEN_HEADER = 'x-internal-token';
+
 const RATE_LIMIT = 100;
 const WINDOW_SEC = 60;
 
@@ -19,6 +23,7 @@ interface ValidaTokenResponse {
   id: string;
   role: string;
   email: string;
+  internalToken: string;
 }
 
 // estende o Request do Express para aceitar o usuário autenticado
@@ -36,6 +41,8 @@ export class AuthMiddleware implements NestMiddleware {
 
   async use(req: RequestWithUser, res: Response, next: NextFunction) {
     // console.log(`[AuthMiddleware] ${req.method} ${req.url}`);
+    this.stripInternalHeaders(req);
+
     // rate limit
     const ip =
       (req.headers['x-forwarded-for'] as string) ??
@@ -89,6 +96,7 @@ export class AuthMiddleware implements NestMiddleware {
       req.headers['x-user-id'] = data.id;
       req.headers['x-user-role'] = data.role;
       req.headers['x-user-email'] = data.email;
+      req.headers[INTERNAL_TOKEN_HEADER] = data.internalToken;
       next();
     } catch (err: unknown) {
       const error = err as { response?: { status?: number } };
@@ -98,6 +106,18 @@ export class AuthMiddleware implements NestMiddleware {
         return;
       }
       res.status(503).json({ message: 'Auth service indisponível' });
+    }
+  }
+
+  // vale para todas as rotas, inclusive as públicas
+  private stripInternalHeaders(req: Request) {
+    for (const name of Object.keys(req.headers)) {
+      if (
+        name.startsWith(INTERNAL_HEADER_PREFIX) ||
+        name === INTERNAL_TOKEN_HEADER
+      ) {
+        delete req.headers[name];
+      }
     }
   }
 }
