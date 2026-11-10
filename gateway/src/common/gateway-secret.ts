@@ -2,7 +2,7 @@ const ENV_NAME = 'GATEWAY_SHARED_SECRET';
 const MIN_LENGTH = 32;
 
 // token de injeção do segredo compartilhado entre gateway e auth
-export const GATEWAY_SECRET = 'GATEWAY_SHARED_SECRET';
+export const GATEWAY_SECRET = Symbol('GATEWAY_SECRET');
 
 // Mesmas regras do auth. As mensagens de erro nunca incluem o segredo.
 export const loadGatewaySecret = (secret: string | undefined): string => {

@@ -6,8 +6,9 @@ import { of, throwError } from 'rxjs';
 import type { Request, Response } from 'express';
 import { AuthMiddleware } from './auth.middleware';
 import { RedisService } from '../redis/redis.service';
+import { GATEWAY_SECRET } from '../gateway-secret';
 
-const GATEWAY_SECRET = 'segredo-compartilhado-com-pelo-menos-32-caracteres';
+const SECRET_VALUE = 'segredo-compartilhado-com-pelo-menos-32-caracteres';
 
 describe('AuthMiddleware', () => {
   let middleware: AuthMiddleware;
@@ -48,7 +49,7 @@ describe('AuthMiddleware', () => {
           provide: RedisService,
           useValue: { increment: jest.fn(), expire: jest.fn(), ttl: jest.fn() },
         },
-        { provide: 'GATEWAY_SHARED_SECRET', useValue: GATEWAY_SECRET },
+        { provide: GATEWAY_SECRET, useValue: SECRET_VALUE },
       ],
     }).compile();
 
@@ -251,7 +252,7 @@ describe('AuthMiddleware', () => {
         {
           headers: {
             token: 'token-valido',
-            'x-gateway-secret': GATEWAY_SECRET,
+            'x-gateway-secret': SECRET_VALUE,
           },
           timeout: 3000,
         },
@@ -376,7 +377,7 @@ describe('AuthMiddleware', () => {
     const axiosError = (fields: Record<string, unknown>) => ({
       ...fields,
       config: {
-        headers: { token: 'token-valido', 'x-gateway-secret': GATEWAY_SECRET },
+        headers: { token: 'token-valido', 'x-gateway-secret': SECRET_VALUE },
       },
     });
 
@@ -433,7 +434,7 @@ describe('AuthMiddleware', () => {
       expect(Logger.prototype.error).toHaveBeenCalledWith(
         expect.stringContaining('GATEWAY_SHARED_SECRET'),
       );
-      expect(allLogs()).not.toContain(GATEWAY_SECRET);
+      expect(allLogs()).not.toContain(SECRET_VALUE);
     });
 
     it.each([
@@ -457,7 +458,7 @@ describe('AuthMiddleware', () => {
 
         expect(res.status).toHaveBeenCalledWith(503);
         expect(next).not.toHaveBeenCalled();
-        expect(allLogs()).not.toContain(GATEWAY_SECRET);
+        expect(allLogs()).not.toContain(SECRET_VALUE);
       },
     );
   });
