@@ -12,6 +12,32 @@ import * as path from 'path';
 
 type LoggableData = Record<string, unknown> | undefined;
 
+// Allowlist: só estes headers aparecem no log. Todo o resto (segredo do
+// gateway, token interno, JWT do cliente e qualquer header novo) vira [REDACTED].
+const LOGGABLE_HEADERS = new Set([
+  'accept',
+  'accept-encoding',
+  'accept-language',
+  'connection',
+  'content-length',
+  'content-type',
+  'host',
+  'user-agent',
+]);
+
+const REDACTED = '[REDACTED]';
+
+const redactHeaders = (headers: LoggableData): Record<string, unknown> => {
+  if (!headers || typeof headers !== 'object') return {};
+
+  return Object.fromEntries(
+    Object.entries(headers).map(([name, value]) => [
+      name,
+      LOGGABLE_HEADERS.has(name.toLowerCase()) ? value : REDACTED,
+    ]),
+  );
+};
+
 @Injectable()
 export class LoggingInterceptor implements NestInterceptor {
   private readonly logger = new Logger('HTTP');
@@ -35,7 +61,7 @@ export class LoggingInterceptor implements NestInterceptor {
           // Dev: log detalhado no console
           this.logger.log(
             `${method} ${url} ${status} - ${duration}ms\n` +
-              `Headers: ${JSON.stringify(this.maskSensitive(headers), null, 2)}\n` +
+              `Headers: ${JSON.stringify(redactHeaders(headers), null, 2)}\n` +
               `Body: ${JSON.stringify(this.maskSensitive(body), null, 2)}`,
           );
         } else {
@@ -49,7 +75,7 @@ export class LoggingInterceptor implements NestInterceptor {
     );
   }
 
-  // Mascara campos sensíveis
+  // Mascara campos sensíveis do body
   private maskSensitive(data: LoggableData): Record<string, unknown> {
     if (!data || typeof data !== 'object') return {};
 
@@ -75,7 +101,7 @@ export class LoggingInterceptor implements NestInterceptor {
     const logPath = path.join(process.cwd(), 'app.log');
     const entry =
       `${new Date().toISOString()} ${method} ${url} ${status} - ${duration}ms\n` +
-      `Headers: ${JSON.stringify(this.maskSensitive(headers), null, 2)}\n` +
+      `Headers: ${JSON.stringify(redactHeaders(headers), null, 2)}\n` +
       `Body: ${JSON.stringify(this.maskSensitive(body), null, 2)}\n` +
       `${'─'.repeat(60)}\n`;
 
