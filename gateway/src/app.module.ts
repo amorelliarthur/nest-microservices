@@ -7,11 +7,12 @@ import {
   NestModule,
   RequestMethod,
 } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { HttpModule } from '@nestjs/axios';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import { AuthMiddleware } from './common/middlewares/auth.middleware';
 import { RedisService } from './common/redis/redis.service';
+import { GATEWAY_SECRET, loadGatewaySecret } from './common/gateway-secret';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { MetricsModule } from './metrics/metrics.module';
 import { MetricsInterceptor } from './metrics/metrics.interceptor';
@@ -26,6 +27,13 @@ import { MetricsInterceptor } from './metrics/metrics.interceptor';
     {
       provide: APP_INTERCEPTOR,
       useClass: MetricsInterceptor,
+    },
+    {
+      // fail fast: sem o segredo compartilhado com o auth, o gateway não sobe
+      provide: GATEWAY_SECRET,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) =>
+        loadGatewaySecret(config.get<string>('GATEWAY_SHARED_SECRET')),
     },
     AuthMiddleware,
     RedisService,

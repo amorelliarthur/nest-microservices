@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
@@ -6,11 +7,14 @@ import type { Request, Response } from 'express';
 import { AuthMiddleware } from './auth.middleware';
 import { RedisService } from '../redis/redis.service';
 
+const GATEWAY_SECRET = 'segredo-compartilhado-com-pelo-menos-32-caracteres';
+
 describe('AuthMiddleware', () => {
   let middleware: AuthMiddleware;
   let httpService: { post: jest.Mock };
   let configService: { get: jest.Mock };
   let redisService: { increment: jest.Mock; expire: jest.Mock; ttl: jest.Mock };
+  let loggerSpies: jest.SpyInstance[];
 
   // helper para montar um mock de Request do Express com o mínimo necessário
   const buildRequest = (overrides: Partial<Request> = {}): Request => {
@@ -44,6 +48,7 @@ describe('AuthMiddleware', () => {
           provide: RedisService,
           useValue: { increment: jest.fn(), expire: jest.fn(), ttl: jest.fn() },
         },
+        { provide: 'GATEWAY_SHARED_SECRET', useValue: GATEWAY_SECRET },
       ],
     }).compile();
 
@@ -54,11 +59,26 @@ describe('AuthMiddleware', () => {
 
     // por padrão, simula que a requisição está bem dentro do limite (1ª do IP)
     redisService.increment.mockResolvedValue(1);
+
+    loggerSpies = [
+      jest.spyOn(Logger.prototype, 'log').mockImplementation(() => {}),
+      jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => {}),
+      jest.spyOn(Logger.prototype, 'error').mockImplementation(() => {}),
+    ];
   });
 
   afterEach(() => {
     jest.clearAllMocks();
+    jest.restoreAllMocks();
   });
+
+  // tudo o que foi registrado em log, inclusive objetos passados como argumento
+  const allLogs = () =>
+    loggerSpies
+      .flatMap((spy) => spy.mock.calls)
+      .flat()
+      .map((value) => JSON.stringify(value) ?? String(value))
+      .join('\n');
 
   describe('rate limiting', () => {
     it('deve incrementar o contador e definir o TTL na primeira requisição do IP', async () => {
@@ -163,6 +183,7 @@ describe('AuthMiddleware', () => {
             'x-user-role': 'ADMIN',
             'x-user-email': 'arthur@user.br',
             'x-internal-token': 'token-forjado',
+            'x-gateway-secret': 'segredo-forjado',
           },
         });
         const res = buildResponse();
@@ -170,6 +191,7 @@ describe('AuthMiddleware', () => {
 
         await middleware.use(req, res, next);
 
+        expect(req.headers['x-gateway-secret']).toBeUndefined();
         expect(req.headers['x-user-id']).toBeUndefined();
         expect(req.headers['x-user-role']).toBeUndefined();
         expect(req.headers['x-user-email']).toBeUndefined();
@@ -222,11 +244,19 @@ describe('AuthMiddleware', () => {
 
       await middleware.use(req, res, next);
 
+      // o segredo vai só nas opções desta chamada, nunca em req.headers
       expect(httpService.post).toHaveBeenCalledWith(
-        'http://auth:3001/auth/validaToken',
+        'http://auth:3001/internal/validate',
         {},
-        { headers: { token: 'token-valido' } },
+        {
+          headers: {
+            token: 'token-valido',
+            'x-gateway-secret': GATEWAY_SECRET,
+          },
+          timeout: 3000,
+        },
       );
+      expect(req.headers['x-gateway-secret']).toBeUndefined();
       expect(req.headers['x-user-id']).toBe(payload.id);
       expect(req.headers['x-user-role']).toBe(payload.role);
       expect(req.headers['x-user-email']).toBe(payload.email);
@@ -268,6 +298,7 @@ describe('AuthMiddleware', () => {
           'x-user-role': 'ADMIN',
           'x-user-extra': 'forjado',
           'x-internal-token': 'token-forjado',
+          'x-gateway-secret': 'segredo-forjado',
         },
       });
       const res = buildResponse();
@@ -289,6 +320,7 @@ describe('AuthMiddleware', () => {
       expect(req.headers['x-user-role']).toBe('USER');
       expect(req.headers['x-user-extra']).toBeUndefined();
       expect(req.headers['x-internal-token']).toBe('token-interno');
+      expect(req.headers['x-gateway-secret']).toBeUndefined();
     });
 
     it('deve retornar 401 quando o auth-service responde com 401 (token inválido)', async () => {
@@ -330,5 +362,103 @@ describe('AuthMiddleware', () => {
       });
       expect(next).not.toHaveBeenCalled();
     });
+  });
+
+  describe('resposta e falhas do auth-service', () => {
+    const protectedRequest = () =>
+      buildRequest({
+        url: '/financial/accounts/me',
+        method: 'GET',
+        headers: { token: 'token-valido' },
+      });
+
+    // erro do axios: config.headers carrega o segredo e nunca pode ir para o log
+    const axiosError = (fields: Record<string, unknown>) => ({
+      ...fields,
+      config: {
+        headers: { token: 'token-valido', 'x-gateway-secret': GATEWAY_SECRET },
+      },
+    });
+
+    const validData = {
+      id: 'user-1',
+      role: 'USER',
+      email: 'arthur@user.br',
+      internalToken: 'token-interno',
+    };
+
+    it.each([
+      ['sem internalToken', { ...validData, internalToken: undefined }],
+      ['com internalToken vazio', { ...validData, internalToken: '' }],
+      ['sem id', { ...validData, id: undefined }],
+      ['sem role', { ...validData, role: undefined }],
+      ['sem email', { ...validData, email: undefined }],
+      ['com id que não é string', { ...validData, id: 123 }],
+      ['vazia', undefined],
+      ['em formato de string', 'ok'],
+    ])(
+      'deve retornar 503 sem repassar a requisição quando a resposta vem %s',
+      async (_caso, data) => {
+        const req = protectedRequest();
+        const res = buildResponse();
+        const next = jest.fn();
+        httpService.post.mockReturnValue(of({ data }));
+
+        await middleware.use(req, res, next);
+
+        expect(res.status).toHaveBeenCalledWith(503);
+        expect(res.json).toHaveBeenCalledWith({
+          message: 'Auth service indisponível',
+        });
+        expect(next).not.toHaveBeenCalled();
+        expect(req.headers['x-user-id']).toBeUndefined();
+        expect(req.headers['x-internal-token']).toBeUndefined();
+      },
+    );
+
+    it('deve retornar 503 e registrar ERROR sem o segredo quando o auth recusa o segredo do gateway (403)', async () => {
+      const res = buildResponse();
+      const next = jest.fn();
+      httpService.post.mockReturnValue(
+        throwError(() => axiosError({ response: { status: 403 } })),
+      );
+
+      await middleware.use(protectedRequest(), res, next);
+
+      expect(res.status).toHaveBeenCalledWith(503);
+      expect(res.json).toHaveBeenCalledWith({
+        message: 'Auth service indisponível',
+      });
+      expect(next).not.toHaveBeenCalled();
+      expect(Logger.prototype.error).toHaveBeenCalledWith(
+        expect.stringContaining('GATEWAY_SHARED_SECRET'),
+      );
+      expect(allLogs()).not.toContain(GATEWAY_SECRET);
+    });
+
+    it.each([
+      ['responde 500', { response: { status: 500 } }],
+      [
+        'estoura o timeout',
+        { code: 'ECONNABORTED', message: 'timeout of 3000ms exceeded' },
+      ],
+      [
+        'recusa a conexão',
+        { code: 'ECONNREFUSED', message: 'connect ECONNREFUSED' },
+      ],
+    ])(
+      'deve retornar 503 sem registrar o segredo quando o auth %s',
+      async (_caso, fields) => {
+        const res = buildResponse();
+        const next = jest.fn();
+        httpService.post.mockReturnValue(throwError(() => axiosError(fields)));
+
+        await middleware.use(protectedRequest(), res, next);
+
+        expect(res.status).toHaveBeenCalledWith(503);
+        expect(next).not.toHaveBeenCalled();
+        expect(allLogs()).not.toContain(GATEWAY_SECRET);
+      },
+    );
   });
 });
