@@ -414,6 +414,8 @@ describe('AuthMiddleware', () => {
         expect(next).not.toHaveBeenCalled();
         expect(req.headers['x-user-id']).toBeUndefined();
         expect(req.headers['x-internal-token']).toBeUndefined();
+        expect(Logger.prototype.warn).toHaveBeenCalled();
+        expect(Logger.prototype.error).not.toHaveBeenCalled();
       },
     );
 
@@ -434,6 +436,7 @@ describe('AuthMiddleware', () => {
       expect(Logger.prototype.error).toHaveBeenCalledWith(
         expect.stringContaining('GATEWAY_SHARED_SECRET'),
       );
+      expect(Logger.prototype.warn).not.toHaveBeenCalled();
       expect(allLogs()).not.toContain(SECRET_VALUE);
     });
 
@@ -448,7 +451,7 @@ describe('AuthMiddleware', () => {
         { code: 'ECONNREFUSED', message: 'connect ECONNREFUSED' },
       ],
     ])(
-      'deve retornar 503 sem registrar o segredo quando o auth %s',
+      'deve retornar 503 e registrar WARN sem o segredo quando o auth %s',
       async (_caso, fields) => {
         const res = buildResponse();
         const next = jest.fn();
@@ -458,8 +461,33 @@ describe('AuthMiddleware', () => {
 
         expect(res.status).toHaveBeenCalledWith(503);
         expect(next).not.toHaveBeenCalled();
+        // só ERROR para o 403, que exige ação na configuração
+        expect(Logger.prototype.warn).toHaveBeenCalled();
+        expect(Logger.prototype.error).not.toHaveBeenCalled();
         expect(allLogs()).not.toContain(SECRET_VALUE);
       },
     );
+
+    it('não deve transformar um erro do proxy, depois de next(), em "Auth service indisponível"', async () => {
+      const res = buildResponse();
+      const next = jest.fn(() => {
+        throw new Error('falha no proxy');
+      });
+      httpService.post.mockReturnValue(
+        of({
+          data: {
+            id: 'user-1',
+            role: 'USER',
+            email: 'arthur@user.br',
+            internalToken: 'token-interno',
+          },
+        }),
+      );
+
+      await expect(
+        middleware.use(protectedRequest(), res, next),
+      ).rejects.toThrow('falha no proxy');
+      expect(res.status).not.toHaveBeenCalled();
+    });
   });
 });

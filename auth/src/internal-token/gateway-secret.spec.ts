@@ -2,6 +2,17 @@ import { createGatewaySecretVerifier } from './gateway-secret';
 
 const SECRET = 'segredo-compartilhado-com-pelo-menos-32-caracteres';
 
+// captura a mensagem para conferir o que ela NÃO contém;
+// um not.toThrow(valor) também passaria se nada fosse lançado
+const errorMessage = (fn: () => unknown): string => {
+  try {
+    fn();
+  } catch (error) {
+    return (error as Error).message;
+  }
+  throw new Error('expected the function to throw');
+};
+
 describe('createGatewaySecretVerifier', () => {
   it('deve falhar quando o segredo não está configurado', () => {
     expect(() => createGatewaySecretVerifier(undefined)).toThrow(
@@ -19,9 +30,12 @@ describe('createGatewaySecretVerifier', () => {
   });
 
   it('não deve incluir o segredo na mensagem de erro', () => {
-    expect(() => createGatewaySecretVerifier('curto-demais')).not.toThrow(
-      'curto-demais',
+    const message = errorMessage(() =>
+      createGatewaySecretVerifier('valor-secreto-curto'),
     );
+
+    expect(message).toContain('GATEWAY_SHARED_SECRET');
+    expect(message).not.toContain('valor-secreto-curto');
   });
 
   it('deve aceitar o segredo correto', () => {
