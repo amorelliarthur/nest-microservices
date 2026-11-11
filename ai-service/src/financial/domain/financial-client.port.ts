@@ -1,9 +1,10 @@
+import type { Caller } from '../../shared/auth/caller';
 import type { FinancialAccount, FinancialTransaction } from './financial.types';
 
 export interface FinancialClient {
-  listAccounts(userId: string): Promise<FinancialAccount[]>;
+  listAccounts(caller: Caller): Promise<FinancialAccount[]>;
   listTransactions(
-    userId: string,
+    caller: Caller,
     accountId: string,
   ): Promise<FinancialTransaction[]>;
 }

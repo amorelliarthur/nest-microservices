@@ -1,3 +1,4 @@
+import type { Caller } from '../../shared/auth/caller';
 import type { FinancialClient } from '../domain/financial-client.port';
 import type {
   FinancialAccount,
@@ -6,6 +7,8 @@ import type {
 
 export class FakeFinancialClient implements FinancialClient {
   readonly transactionRequests: string[] = [];
+  // Who made each request, in order: lets tests check the token is forwarded
+  readonly callers: Caller[] = [];
 
   constructor(
     private readonly accountsByUser: Record<string, FinancialAccount[]>,
@@ -15,14 +18,16 @@ export class FakeFinancialClient implements FinancialClient {
     > = {},
   ) {}
 
-  listAccounts(userId: string): Promise<FinancialAccount[]> {
-    return Promise.resolve(this.accountsByUser[userId] ?? []);
+  listAccounts(caller: Caller): Promise<FinancialAccount[]> {
+    this.callers.push(caller);
+    return Promise.resolve(this.accountsByUser[caller.userId] ?? []);
   }
 
   listTransactions(
-    _userId: string,
+    caller: Caller,
     accountId: string,
   ): Promise<FinancialTransaction[]> {
+    this.callers.push(caller);
     this.transactionRequests.push(accountId);
     return Promise.resolve(this.transactionsByAccount[accountId] ?? []);
   }

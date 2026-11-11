@@ -37,6 +37,8 @@ const tx = (
   createdAt: new Date(createdAt),
 });
 
+const caller = { userId: 'user-1', internalToken: 'internal-token-1' };
+
 const makeSut = (client: FinancialClient) =>
   new ToolRegistry(createFinancialTools(new FinancialDataService(client)));
 
@@ -44,11 +46,7 @@ const run = (
   registry: ToolRegistry,
   name: string,
   args: Record<string, unknown> = {},
-) =>
-  registry.execute(
-    { id: 'call-1', name, arguments: args },
-    { userId: 'user-1' },
-  );
+) => registry.execute({ id: 'call-1', name, arguments: args }, { caller });
 
 const outputOf = (result: ToolResult): TransactionsOutput => {
   if (!result.ok) throw new Error(result.error);

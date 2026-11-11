@@ -1,3 +1,4 @@
+import { InternalAuthModule } from '../common/auth/internal-auth.module';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Transaction } from './entities/transaction.entity';
@@ -11,7 +12,10 @@ import { RabbitMQService } from '../common/rabbitmq/rabbitmq.service';
 
 @Module({
   // precisa do Account aqui porque o service manipula as duas entidades
-  imports: [TypeOrmModule.forFeature([Transaction, Account])],
+  imports: [
+    TypeOrmModule.forFeature([Transaction, Account]),
+    InternalAuthModule,
+  ],
   controllers: [TransactionsController],
   providers: [
     TransactionsService,

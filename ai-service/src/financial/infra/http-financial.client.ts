@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { z } from 'zod';
+import type { Caller } from '../../shared/auth/caller';
 import { formatZodIssues } from '../../shared/zod/format-zod-issues';
 import type { FinancialClient } from '../domain/financial-client.port';
 import { FinancialServiceError } from '../domain/financial-service.error';
@@ -34,35 +35,36 @@ export class HttpFinancialClient implements FinancialClient {
     this.timeoutMs = timeout.data;
   }
 
-  listAccounts(userId: string): Promise<FinancialAccount[]> {
+  listAccounts(caller: Caller): Promise<FinancialAccount[]> {
     return this.get(
-      `/accounts/user/${encodeURIComponent(userId)}`,
-      userId,
+      `/accounts/user/${encodeURIComponent(caller.userId)}`,
+      caller,
       z.array(accountResponseSchema),
     );
   }
 
   listTransactions(
-    userId: string,
+    caller: Caller,
     accountId: string,
   ): Promise<FinancialTransaction[]> {
     // accountId vem do modelo: codificar impede que ele altere o caminho da URL
     return this.get(
       `/transactions/account/${encodeURIComponent(accountId)}`,
-      userId,
+      caller,
       z.array(transactionResponseSchema),
     );
   }
 
   private async get<T>(
     path: string,
-    userId: string,
+    caller: Caller,
     schema: z.ZodType<T>,
   ): Promise<T> {
     let response: Response;
     try {
       response = await fetch(`${this.baseUrl}${path}`, {
-        headers: { 'x-user-id': userId },
+        // The financial service reads the identity only from this signed token
+        headers: { 'x-internal-token': caller.internalToken },
         signal: AbortSignal.timeout(this.timeoutMs),
       });
     } catch (error) {

@@ -1,3 +1,4 @@
+import type { Caller } from '../../shared/auth/caller';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { LLM_PROVIDER } from '../../llm/domain/llm-provider.port';
 import type {
@@ -53,7 +54,7 @@ export class AskAssistantUseCase {
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
-  async execute(question: string, userId: string): Promise<AssistantAnswer> {
+  async execute(question: string, caller: Caller): Promise<AssistantAnswer> {
     const system = buildSystemPrompt(this.clock().toISOString().slice(0, 10));
     const definitions = this.tools.definitions();
     const toolsUsed: string[] = [];
@@ -72,10 +73,10 @@ export class AskAssistantUseCase {
         return this.finish(response.text, sources, toolsUsed);
       }
 
-      // O userId vem da requisição autenticada, nunca dos argumentos do modelo
+      // O caller vem da requisição autenticada, nunca dos argumentos do modelo
       const results = await Promise.all(
         response.toolCalls.map((call) =>
-          this.tools.execute(call, { userId, sources }),
+          this.tools.execute(call, { caller, sources }),
         ),
       );
 

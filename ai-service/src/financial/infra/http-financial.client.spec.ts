@@ -8,6 +8,8 @@ const jsonResponse = (body: unknown, status = 200) =>
     headers: { 'Content-Type': 'application/json' },
   });
 
+const caller = { userId: 'user-1', internalToken: 'internal-token-1' };
+
 const makeSut = () => {
   const fetchMock = jest.spyOn(global, 'fetch');
   const client = new HttpFinancialClient(
@@ -22,7 +24,7 @@ const makeSut = () => {
 describe('HttpFinancialClient', () => {
   afterEach(() => jest.restoreAllMocks());
 
-  it('requests the accounts forwarding the user id with a timeout and converts decimals', async () => {
+  it('requests the accounts forwarding the internal token with a timeout and converts decimals', async () => {
     const { client, fetchMock } = makeSut();
     fetchMock.mockResolvedValue(
       jsonResponse([
@@ -36,13 +38,13 @@ describe('HttpFinancialClient', () => {
       ]),
     );
 
-    await expect(client.listAccounts('user-1')).resolves.toEqual([
+    await expect(client.listAccounts(caller)).resolves.toEqual([
       { id: 'acc-1', type: 'CHECKING', balance: 150.5 },
     ]);
 
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe('http://financial.test/accounts/user/user-1');
-    expect(init?.headers).toEqual({ 'x-user-id': 'user-1' });
+    expect(init?.headers).toEqual({ 'x-internal-token': 'internal-token-1' });
     expect(init?.signal).toBeInstanceOf(AbortSignal);
   });
 
@@ -63,7 +65,7 @@ describe('HttpFinancialClient', () => {
       ]),
     );
 
-    await expect(client.listTransactions('user-1', 'acc-1')).resolves.toEqual([
+    await expect(client.listTransactions(caller, 'acc-1')).resolves.toEqual([
       {
         id: 't1',
         accountId: 'acc-1',
@@ -75,11 +77,22 @@ describe('HttpFinancialClient', () => {
     ]);
   });
 
+  it('forwards the internal token, and never x-user-*, when listing transactions', async () => {
+    const { client, fetchMock } = makeSut();
+    fetchMock.mockResolvedValue(jsonResponse([]));
+
+    await client.listTransactions(caller, 'acc-1');
+
+    expect(fetchMock.mock.calls[0][1]?.headers).toEqual({
+      'x-internal-token': 'internal-token-1',
+    });
+  });
+
   it('encodes the account id in the path', async () => {
     const { client, fetchMock } = makeSut();
     fetchMock.mockResolvedValue(jsonResponse([]));
 
-    await client.listTransactions('user-1', '../accounts/x');
+    await client.listTransactions(caller, '../accounts/x');
 
     expect(fetchMock.mock.calls[0][0]).toBe(
       'http://financial.test/transactions/account/..%2Faccounts%2Fx',
@@ -90,7 +103,7 @@ describe('HttpFinancialClient', () => {
     const { client, fetchMock } = makeSut();
     fetchMock.mockResolvedValue(jsonResponse({ message: 'boom' }, 500));
 
-    await expect(client.listAccounts('user-1')).rejects.toThrow(
+    await expect(client.listAccounts(caller)).rejects.toThrow(
       FinancialServiceError,
     );
   });
@@ -99,7 +112,7 @@ describe('HttpFinancialClient', () => {
     const { client, fetchMock } = makeSut();
     fetchMock.mockResolvedValue(jsonResponse([{ id: 'acc-1' }]));
 
-    await expect(client.listAccounts('user-1')).rejects.toThrow(
+    await expect(client.listAccounts(caller)).rejects.toThrow(
       FinancialServiceError,
     );
   });
@@ -113,7 +126,7 @@ describe('HttpFinancialClient', () => {
       ),
     );
 
-    await expect(client.listAccounts('user-1')).rejects.toThrow(
+    await expect(client.listAccounts(caller)).rejects.toThrow(
       FinancialServiceError,
     );
   });

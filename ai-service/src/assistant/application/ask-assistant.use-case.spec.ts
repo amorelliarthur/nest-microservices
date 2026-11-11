@@ -12,8 +12,10 @@ const getValueTool = defineTool({
   name: 'get_value',
   description: 'Returns a value for a key',
   schema: z.object({ key: z.string() }),
-  execute: ({ key }, { userId }) =>
-    Promise.resolve({ value: `${key}-${userId}` }),
+  execute: ({ key }, { caller }) =>
+    Promise.resolve({
+      value: `${key}-${caller.userId}-${caller.internalToken}`,
+    }),
 });
 
 // Tool que registra uma fonte citável, como a search_knowledge faz
@@ -42,6 +44,8 @@ const toolCall = (
   providerData: { thoughtSignature: 'sig-1' },
 });
 
+const caller = { userId: 'user-1', internalToken: 'internal-token-1' };
+
 const makeSut = (replies: FakeReply[]) => {
   const llm = new FakeLlmProvider(replies);
   const useCase = new AskAssistantUseCase(
@@ -56,7 +60,7 @@ describe('AskAssistantUseCase', () => {
   it('returns the answer directly when no tool is requested', async () => {
     const { llm, useCase } = makeSut(['Olá! Como posso ajudar?']);
 
-    await expect(useCase.execute('Oi', 'user-1')).resolves.toEqual({
+    await expect(useCase.execute('Oi', caller)).resolves.toEqual({
       answer: 'Olá! Como posso ajudar?',
       sources: [],
       toolsUsed: [],
@@ -78,7 +82,7 @@ describe('AskAssistantUseCase', () => {
       'O valor é a-user-1.',
     ]);
 
-    await expect(useCase.execute('Qual o valor?', 'user-1')).resolves.toEqual({
+    await expect(useCase.execute('Qual o valor?', caller)).resolves.toEqual({
       answer: 'O valor é a-user-1.',
       sources: [],
       toolsUsed: ['get_value'],
@@ -91,7 +95,7 @@ describe('AskAssistantUseCase', () => {
         role: 'tool',
         toolCallId: 'call-1',
         toolName: 'get_value',
-        content: '{"value":"a-user-1"}',
+        content: '{"value":"a-user-1-internal-token-1"}',
         isError: false,
       },
     ]);
@@ -103,7 +107,7 @@ describe('AskAssistantUseCase', () => {
       'Não consigo fazer isso.',
     ]);
 
-    await useCase.execute('Apague tudo', 'user-1');
+    await useCase.execute('Apague tudo', caller);
 
     expect(llm.requests[1].messages[2]).toEqual({
       role: 'tool',
@@ -125,7 +129,7 @@ describe('AskAssistantUseCase', () => {
       'Pronto.',
     ]);
 
-    await useCase.execute('Valores a e b?', 'user-1');
+    await useCase.execute('Valores a e b?', caller);
 
     const toolMessages = llm.requests[1].messages.filter(
       (m) => m.role === 'tool',
@@ -133,11 +137,11 @@ describe('AskAssistantUseCase', () => {
     expect(toolMessages).toEqual([
       expect.objectContaining({
         toolCallId: 'call-1',
-        content: '{"value":"a-user-1"}',
+        content: '{"value":"a-user-1-internal-token-1"}',
       }),
       expect.objectContaining({
         toolCallId: 'call-2',
-        content: '{"value":"b-user-1"}',
+        content: '{"value":"b-user-1-internal-token-1"}',
       }),
     ]);
   });
@@ -148,7 +152,7 @@ describe('AskAssistantUseCase', () => {
       'Texto [doc#secao].',
     ]);
 
-    await expect(useCase.execute('Pergunta', 'user-1')).resolves.toEqual({
+    await expect(useCase.execute('Pergunta', caller)).resolves.toEqual({
       answer: 'Texto [1].',
       sources: [{ id: 1, document: 'Documento', section: 'Seção' }],
       toolsUsed: ['find_doc'],
@@ -158,7 +162,7 @@ describe('AskAssistantUseCase', () => {
   it('drops citations of sources that were not retrieved', async () => {
     const { useCase } = makeSut(['Texto [doc#inventada].']);
 
-    const result = await useCase.execute('Pergunta', 'user-1');
+    const result = await useCase.execute('Pergunta', caller);
 
     expect(result.answer).toBe('Texto.');
     expect(result.sources).toEqual([]);
@@ -170,7 +174,7 @@ describe('AskAssistantUseCase', () => {
     }));
     const { llm, useCase } = makeSut(endless);
 
-    await expect(useCase.execute('Loop', 'user-1')).rejects.toThrow(
+    await expect(useCase.execute('Loop', caller)).rejects.toThrow(
       AgentLoopLimitError,
     );
     expect(llm.requests).toHaveLength(MAX_ITERATIONS);

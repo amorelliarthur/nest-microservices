@@ -4,20 +4,20 @@ import {
   Injectable,
   ForbiddenException,
 } from '@nestjs/common';
-import { Request } from 'express';
+import type { RequestWithRequester } from '../auth/internal-token.guard';
 
+// Usar sempre depois do InternalTokenGuard, que grava o requester na requisição
 @Injectable()
 export class OwnerOrAdminGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
-    const request = context.switchToHttp().getRequest<Request>();
-    const id = request.params.id;
-
-    // lê do header repassado pelo gateway
-    const userId = request.headers['x-user-id'] as string;
-    const role = request.headers['x-user-role'] as string;
+    const request = context.switchToHttp().getRequest<RequestWithRequester>();
+    const requester = request.requester;
 
     // Admin passa direto, dono do recurso também
-    if (role === 'ADMIN' || userId === id) {
+    if (
+      requester &&
+      (requester.role === 'ADMIN' || requester.id === request.params.id)
+    ) {
       return true;
     }
 

@@ -27,6 +27,8 @@ const tx = (
   createdAt: new Date(createdAt),
 });
 
+const caller = { userId: 'user-1', internalToken: 'internal-token-1' };
+
 const makeSut = () => {
   const client = new FakeFinancialClient(
     { 'user-1': [account('acc-1')], 'user-2': [account('acc-2')] },
@@ -46,7 +48,7 @@ describe('FinancialDataService', () => {
   it('lists the accounts of the user', async () => {
     const { service } = makeSut();
 
-    await expect(service.listAccounts('user-1')).resolves.toEqual([
+    await expect(service.listAccounts(caller)).resolves.toEqual([
       account('acc-1'),
     ]);
   });
@@ -54,7 +56,7 @@ describe('FinancialDataService', () => {
   it('returns an account that belongs to the user', async () => {
     const { service } = makeSut();
 
-    await expect(service.getAccount('user-1', 'acc-1')).resolves.toEqual(
+    await expect(service.getAccount(caller, 'acc-1')).resolves.toEqual(
       account('acc-1'),
     );
   });
@@ -62,7 +64,7 @@ describe('FinancialDataService', () => {
   it('throws AccountNotFoundError for an account of another user', async () => {
     const { service } = makeSut();
 
-    await expect(service.getAccount('user-1', 'acc-2')).rejects.toThrow(
+    await expect(service.getAccount(caller, 'acc-2')).rejects.toThrow(
       AccountNotFoundError,
     );
   });
@@ -70,16 +72,24 @@ describe('FinancialDataService', () => {
   it('never fetches transactions of an account the user does not own', async () => {
     const { client, service } = makeSut();
 
-    await expect(service.listTransactions('user-1', 'acc-2')).rejects.toThrow(
+    await expect(service.listTransactions(caller, 'acc-2')).rejects.toThrow(
       AccountNotFoundError,
     );
     expect(client.transactionRequests).toHaveLength(0);
   });
 
+  it('forwards the caller to every financial request', async () => {
+    const { client, service } = makeSut();
+
+    await service.listTransactions(caller, 'acc-1');
+
+    expect(client.callers).toEqual([caller, caller]);
+  });
+
   it('returns all transactions when no filter is given', async () => {
     const { service } = makeSut();
 
-    const result = await service.listTransactions('user-1', 'acc-1');
+    const result = await service.listTransactions(caller, 'acc-1');
 
     expect(result.map((t) => t.id)).toEqual(['t1', 't2', 't3']);
   });
@@ -87,7 +97,7 @@ describe('FinancialDataService', () => {
   it('filters transactions by inclusive period and type', async () => {
     const { service } = makeSut();
 
-    const result = await service.listTransactions('user-1', 'acc-1', {
+    const result = await service.listTransactions(caller, 'acc-1', {
       from: new Date('2026-10-10T00:00:00Z'),
       to: new Date('2026-10-31T23:59:59Z'),
       type: 'WITHDRAWAL',

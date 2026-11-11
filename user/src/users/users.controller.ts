@@ -10,19 +10,21 @@ import {
   HttpCode,
   HttpStatus,
   UseGuards,
-  Request,
 } from '@nestjs/common';
+import { CurrentRequester } from '../common/auth/current-requester.decorator';
+import { InternalTokenGuard } from '../common/auth/internal-token.guard';
+import type { Requester } from '../common/auth/requester';
 import { AdminGuard } from '../common/guards/admin.guard';
 import { OwnerOrAdminGuard } from '../common/guards/owner-or-admin.guard';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
-import type { Request as ExpressRequest } from 'express';
 
 @Controller('user')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
+  // Cadastro público: o gateway libera esta rota sem login, por isso não há token interno
   @Post()
   @HttpCode(HttpStatus.CREATED)
   create(@Body() dto: CreateUserDto) {
@@ -36,34 +38,34 @@ export class UsersController {
     return this.usersService.authenticate(body.email, body.senha);
   }
 
+  // Os guards rodam na ordem: primeiro o token interno, depois a role/dono
   @Get()
-  @UseGuards(AdminGuard)
+  @UseGuards(InternalTokenGuard, AdminGuard)
   findAll(@Query('nome') nome?: string) {
     return this.usersService.findAll(nome);
   }
 
   // Usuário autenticado busca os próprios dados
   @Get('me')
-  getMe(@Request() req: ExpressRequest) {
-    // lê do header repassado pelo gateway
-    const userId = req.headers['x-user-id'] as string;
-    return this.usersService.findById(userId);
+  @UseGuards(InternalTokenGuard)
+  getMe(@CurrentRequester() requester: Requester) {
+    return this.usersService.findById(requester.id);
   }
 
   @Get(':id')
-  @UseGuards(AdminGuard)
+  @UseGuards(InternalTokenGuard, AdminGuard)
   findById(@Param('id') id: string) {
     return this.usersService.findById(id);
   }
 
   @Patch(':id')
-  @UseGuards(OwnerOrAdminGuard)
+  @UseGuards(InternalTokenGuard, OwnerOrAdminGuard)
   update(@Param('id') id: string, @Body() dto: UpdateUserDto) {
     return this.usersService.update(id, dto);
   }
 
   @Delete(':id')
-  @UseGuards(OwnerOrAdminGuard)
+  @UseGuards(InternalTokenGuard, OwnerOrAdminGuard)
   @HttpCode(HttpStatus.NO_CONTENT)
   remove(@Param('id') id: string) {
     return this.usersService.remove(id);

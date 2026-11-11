@@ -16,6 +16,9 @@ export class AssistantController {
     @Body(new ZodValidationPipe(askAssistantSchema)) input: AskAssistantInput,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.askAssistant.execute(input.question, user.id);
+    return this.askAssistant.execute(input.question, {
+      userId: user.id,
+      internalToken: user.internalToken,
+    });
   }
 }

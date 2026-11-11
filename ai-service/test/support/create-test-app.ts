@@ -7,6 +7,8 @@ import type { FinancialClient } from '../../src/financial/domain/financial-clien
 import { FakeFinancialClient } from '../../src/financial/testing/fake-financial.client';
 import { KNOWLEDGE_REPOSITORY } from '../../src/knowledge/domain/knowledge-repository.port';
 import { PG_POOL } from '../../src/knowledge/infra/pg-pool.provider';
+import { InternalTokenVerifier } from '../../src/shared/auth/internal-token.verifier';
+import { createInternalTokenTestKit } from '../../src/shared/auth/testing/internal-token.testing';
 import { FakeKnowledgeRepository } from '../../src/knowledge/testing/fake-knowledge.repository';
 import { EMBEDDING_PROVIDER } from '../../src/llm/domain/embedding-provider.port';
 import { LLM_PROVIDER } from '../../src/llm/domain/llm-provider.port';
@@ -29,6 +31,8 @@ export const createTestApp = async ({
   knowledge = new FakeKnowledgeRepository(),
 }: TestAppOptions = {}) => {
   const llm = new FakeLlmProvider(llmReplies);
+  // Keys generated per app: tests issue tokens like the auth service would
+  const tokens = createInternalTokenTestKit();
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(LLM_PROVIDER)
     .useValue(llm)
@@ -41,9 +45,17 @@ export const createTestApp = async ({
     .useValue({ end: () => Promise.resolve() })
     .overrideProvider(KNOWLEDGE_REPOSITORY)
     .useValue(knowledge)
+    // Without this override the CI (no .env) would have no public key
+    .overrideProvider(InternalTokenVerifier)
+    .useValue(new InternalTokenVerifier(tokens.publicKey))
     .compile();
 
   const app: INestApplication<App> = moduleRef.createNestApplication();
   await app.init();
-  return { app, llm };
+  // Headers the gateway would send for this user
+  const authHeaders = (userId: string, role = 'USER') => ({
+    'x-internal-token': tokens.issue(userId, role),
+  });
+
+  return { app, llm, authHeaders };
 };

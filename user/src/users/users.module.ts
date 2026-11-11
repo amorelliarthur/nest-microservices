@@ -3,6 +3,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { UsersController } from './users.controller';
 import { UsersService } from './users.service';
 import { User, UserSchema } from './schemas/user.schema';
+import { InternalAuthModule } from '../common/auth/internal-auth.module';
 import { AdminGuard } from '../common/guards/admin.guard';
 import { OwnerOrAdminGuard } from '../common/guards/owner-or-admin.guard';
 import { RedisService } from '../common/redis/redis.service';
@@ -13,6 +14,7 @@ import { RabbitMQService } from '../common/rabbitmq/rabbitmq.service';
   imports: [
     // Registra o schema do Mongoose dentro deste módulo
     MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
+    InternalAuthModule,
   ],
   controllers: [UsersController, TransactionConsumer],
   providers: [

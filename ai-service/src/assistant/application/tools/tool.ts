@@ -1,8 +1,10 @@
 import type { z } from 'zod';
+import type { Caller } from '../../../shared/auth/caller';
 import type { SourceCollector } from '../citations';
 
 export interface ToolContext {
-  userId: string;
+  // Always the authenticated user of the request, never something the model sent
+  caller: Caller;
   // Fontes que podem ser citadas na resposta desta pergunta
   sources?: SourceCollector;
 }

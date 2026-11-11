@@ -14,17 +14,16 @@ const financial = new FakeFinancialClient({
   'user-2': [{ id: 'acc-2', type: 'CHECKING', balance: 99 }],
 });
 
-const userHeaders = (userId: string) => ({
-  'x-user-id': userId,
-  'x-user-role': 'USER',
-});
-
 describe('POST /assistant/ask (e2e)', () => {
   let app: INestApplication<App>;
   let llm: FakeLlmProvider;
+  let authHeaders: (userId: string) => Record<string, string>;
 
   const createApp = async (llmReplies: FakeReply[]) => {
-    ({ app, llm } = await createTestApp({ llmReplies, financial }));
+    ({ app, llm, authHeaders } = await createTestApp({
+      llmReplies,
+      financial,
+    }));
   };
 
   afterEach(async () => {
@@ -39,7 +38,7 @@ describe('POST /assistant/ask (e2e)', () => {
 
     await request(app.getHttpServer())
       .post('/assistant/ask')
-      .set(userHeaders('user-1'))
+      .set(authHeaders('user-1'))
       .send({ question: 'Quais são minhas contas?' })
       .expect(200)
       .expect({
@@ -52,6 +51,30 @@ describe('POST /assistant/ask (e2e)', () => {
       role: 'tool',
       content: '[{"id":"acc-1","type":"CHECKING","balance":1500.5}]',
     });
+  });
+
+  it('forwards the internal token it received when calling the financial service', async () => {
+    const financialSpy = new FakeFinancialClient({
+      'user-1': [{ id: 'acc-1', type: 'CHECKING', balance: 10 }],
+    });
+    ({ app, authHeaders } = await createTestApp({
+      llmReplies: [
+        { toolCalls: [{ id: 'call-1', name: 'list_accounts', arguments: {} }] },
+        'Você tem uma conta.',
+      ],
+      financial: financialSpy,
+    }));
+    const headers = authHeaders('user-1');
+
+    await request(app.getHttpServer())
+      .post('/assistant/ask')
+      .set(headers)
+      .send({ question: 'Quais são minhas contas?' })
+      .expect(200);
+
+    expect(financialSpy.callers).toEqual([
+      { userId: 'user-1', internalToken: headers['x-internal-token'] },
+    ]);
   });
 
   it('never exposes accounts of another user, even if the model asks for them', async () => {
@@ -70,7 +93,7 @@ describe('POST /assistant/ask (e2e)', () => {
 
     await request(app.getHttpServer())
       .post('/assistant/ask')
-      .set(userHeaders('user-2'))
+      .set(authHeaders('user-2'))
       .send({ question: 'Qual o saldo da conta acc-1?' })
       .expect(200);
 
@@ -86,7 +109,7 @@ describe('POST /assistant/ask (e2e)', () => {
 
     await request(app.getHttpServer())
       .post('/assistant/ask')
-      .set(userHeaders('user-1'))
+      .set(authHeaders('user-1'))
       .send({ question: 'x'.repeat(501) })
       .expect(400);
 
@@ -102,6 +125,18 @@ describe('POST /assistant/ask (e2e)', () => {
       .expect(401);
   });
 
+  it('returns 401 when only x-user-* headers are sent, without the internal token', async () => {
+    await createApp([]);
+
+    await request(app.getHttpServer())
+      .post('/assistant/ask')
+      .set({ 'x-user-id': 'user-1', 'x-user-role': 'ADMIN' })
+      .send({ question: 'Quais são minhas contas?' })
+      .expect(401);
+
+    expect(llm.requests).toHaveLength(0);
+  });
+
   it('returns 502 when the assistant does not finish within the iteration limit', async () => {
     await createApp(
       Array.from({ length: MAX_ITERATIONS }, () => ({
@@ -111,7 +146,7 @@ describe('POST /assistant/ask (e2e)', () => {
 
     const response = await request(app.getHttpServer())
       .post('/assistant/ask')
-      .set(userHeaders('user-1'))
+      .set(authHeaders('user-1'))
       .send({ question: 'Quais são minhas contas?' })
       .expect(502);
 
@@ -126,7 +161,7 @@ describe('POST /assistant/ask (e2e)', () => {
 
     const response = await request(app.getHttpServer())
       .post('/assistant/ask')
-      .set(userHeaders('user-1'))
+      .set(authHeaders('user-1'))
       .send({ question: 'Quais são minhas contas?' })
       .expect(503);
 
@@ -142,7 +177,7 @@ describe('POST /assistant/ask (e2e)', () => {
 
     const response = await request(app.getHttpServer())
       .post('/assistant/ask')
-      .set(userHeaders('user-1'))
+      .set(authHeaders('user-1'))
       .send({ question: 'Quais são minhas contas?' })
       .expect(502);
 
@@ -164,7 +199,7 @@ describe('POST /assistant/ask (e2e)', () => {
         distance: 0.229,
       },
     ];
-    ({ app, llm } = await createTestApp({
+    ({ app, llm, authHeaders } = await createTestApp({
       llmReplies: [
         {
           toolCalls: [
@@ -186,7 +221,7 @@ describe('POST /assistant/ask (e2e)', () => {
 
     await request(app.getHttpServer())
       .post('/assistant/ask')
-      .set(userHeaders('user-1'))
+      .set(authHeaders('user-1'))
       .send({ question: 'Posso transferir para a mesma conta?' })
       .expect(200)
       .expect({
