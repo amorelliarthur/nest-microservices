@@ -23,6 +23,8 @@ export class InternalTokenVerifier {
     let payload: unknown;
     try {
       payload = verify(token, this.publicKey, {
+        // Defesa extra: o jsonwebtoken 9 já recusa HS256, none e outras curvas
+        // com esta chave P-256, mas fixar o algoritmo não depende disso
         algorithms: ['ES256'],
         issuer: INTERNAL_TOKEN_ISSUER,
         audience: INTERNAL_TOKEN_AUDIENCE,

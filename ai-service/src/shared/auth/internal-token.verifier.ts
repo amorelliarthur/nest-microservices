@@ -26,6 +26,8 @@ export class InternalTokenVerifier {
     let payload: unknown;
     try {
       payload = verify(token, this.publicKey, {
+        // Defense in depth: jsonwebtoken 9 already rejects HS256, none and other
+        // curves with this P-256 key, but pinning the algorithm does not rely on it
         algorithms: ['ES256'],
         issuer: INTERNAL_TOKEN_ISSUER,
         audience: INTERNAL_TOKEN_AUDIENCE,
