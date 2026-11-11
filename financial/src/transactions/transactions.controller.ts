@@ -6,13 +6,16 @@ import {
   Body,
   HttpCode,
   HttpStatus,
+  UseGuards,
 } from '@nestjs/common';
 import { TransactionsService } from './transactions.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { CurrentRequester } from '../common/auth/current-requester.decorator';
+import { InternalTokenGuard } from '../common/auth/internal-token.guard';
 import type { Requester } from '../common/auth/requester';
 
 @Controller('transactions')
+@UseGuards(InternalTokenGuard)
 export class TransactionsController {
   constructor(private readonly transactionsService: TransactionsService) {}
 

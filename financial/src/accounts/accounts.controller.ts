@@ -8,14 +8,17 @@ import {
   HttpCode,
   HttpStatus,
   ForbiddenException,
+  UseGuards,
 } from '@nestjs/common';
 import { AccountsService } from './accounts.service';
 import { CreateAccountDto } from './dto/create-account.dto';
 import { CurrentRequester } from '../common/auth/current-requester.decorator';
+import { InternalTokenGuard } from '../common/auth/internal-token.guard';
 import { canAccess } from '../common/auth/requester';
 import type { Requester } from '../common/auth/requester';
 
 @Controller('accounts')
+@UseGuards(InternalTokenGuard)
 export class AccountsController {
   constructor(private readonly accountsService: AccountsService) {}
 
