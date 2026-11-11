@@ -18,6 +18,7 @@ Arquitetura de microserviços em NestJS com gerenciamento de usuários, serviço
 - Arquitetura de microserviços com NestJS
 - API Gateway com proxy reverso e autenticação centralizada
 - Autenticação com JWT e logout com blacklist
+- Token interno assinado (ES256) entre os serviços: a identidade do usuário nunca vem de headers soltos
 - Autorização por níveis (USER / ADMIN)
 - Comunicação entre serviços via HTTP e eventos assíncronos (RabbitMQ)
 - Validação de dados com class-validator e Zod (ai-service)
@@ -50,7 +51,7 @@ O sistema é dividido em microserviços independentes:
 
 A comunicação síncrona ocorre via **HTTP REST**, centralizada pelo gateway. A comunicação entre user-service e financial-service é **assíncrona via RabbitMQ** (Event-Driven Architecture), sem chamadas HTTP diretas entre os dois.
 
-O ai-service consulta o financial-service **diretamente via HTTP** (tráfego interno, sem voltar pelo gateway), repassando a identidade do usuário autenticado no header `x-user-id`.
+O ai-service consulta o financial-service **diretamente via HTTP** (tráfego interno, sem voltar pelo gateway), repassando o mesmo token interno que recebeu do gateway (`x-internal-token`). Veja [Modelo de confiança entre os serviços](#modelo-de-confiança-entre-os-serviços).
 
 ```
 [ Client ]
@@ -72,12 +73,12 @@ O ai-service consulta o financial-service **diretamente via HTTP** (tráfego int
      |
      +------> [ Financial Service :3004 ] <----+
      |          Queue (Redis + BullMQ)         |  tools (HTTP interno,
-     |               |                         |  x-user-id)
+     |               |                         |  x-internal-token)
      |               v                         |
      |           PostgreSQL                    |
      |                                         |
      +------> [ AI Service :3006 ] ------------+
-                Guard (x-user-id)
+                Guard (x-internal-token)
                      |
                      v
               [ Gemini (LLM) ]
@@ -160,7 +161,8 @@ Responsabilidades:
 - Autenticação centralizada via JWT
 - Rotas públicas: `POST /auth/login`, `POST /user` e `POST /auth/logout`
 - Rate limiting por IP com Redis
-- Repasse de dados do usuário via headers internos (x-user-id, x-user-role)
+- Repasse da identidade do usuário no token interno assinado pelo auth (`x-internal-token`)
+- Descarte de headers internos enviados pelo cliente (`x-user-*`, `x-internal-token`, `x-gateway-secret`) em todas as rotas
 
 Rotas expostas:
 
@@ -177,6 +179,7 @@ Responsabilidades:
 - Validação de token JWT
 - Comunicação com user-service para autenticação
 - Blacklist de tokens no Redis (logout real)
+- Emissão do token interno (ES256) para o gateway em `POST /internal/validate`, protegida por segredo compartilhado
 
 ## User Service
 
@@ -308,6 +311,7 @@ O assistente cita os trechos da base que usou. No texto, cada citação aparece 
 - A classificação dos gastos em categorias, quando feita pelo modelo, pode variar entre respostas
 - As citações garantem que toda fonte exibida é real, mas não que toda frase tenha fonte
 - O fallback usa outro modelo do mesmo provedor e não protege contra uma indisponibilidade geral do Gemini
+- O token interno vale 2 minutos: uma pergunta que demore mais que isso (por exemplo, com retries do LLM em várias iterações) recebe `401` do financial no meio do loop, e a tool devolve erro ao modelo
 
 ---
 
@@ -342,7 +346,7 @@ POST /auth/logout (token no header)
   → retorna 204 No Content
 
 Próxima requisição com o mesmo token:
-  → gateway chama /auth/validaToken
+  → gateway chama /internal/validate
   → auth-service consulta Redis antes de verificar a assinatura
   → token encontrado na blacklist → retorna 401 Unauthorized
   → token expira → Redis remove automaticamente
@@ -471,6 +475,7 @@ AI_SERVER=http://localhost:3006
 REDIS_HOST=localhost
 REDIS_PORT=6379
 NODE_ENV=dev
+GATEWAY_SHARED_SECRET=<mesmo-valor-do-auth>
 ```
 
 ### Auth Service
@@ -484,6 +489,8 @@ USER_SERVER=localhost:3000
 REDIS_HOST=localhost
 REDIS_PORT=6379
 NODE_ENV=dev
+INTERNAL_JWT_PRIVATE_KEY_B64=<chave-privada-gerada-pelo-script>
+GATEWAY_SHARED_SECRET=<mesmo-valor-do-gateway>
 ```
 
 ### User Service
@@ -498,6 +505,7 @@ REDIS_HOST=localhost
 REDIS_PORT=6379
 RABBITMQ_HOST=localhost
 NODE_ENV=dev
+INTERNAL_JWT_PUBLIC_KEY_B64=<chave-publica-gerada-pelo-script>
 ```
 
 ### Financial Service
@@ -514,6 +522,7 @@ REDIS_HOST=localhost
 REDIS_PORT=6379
 RABBITMQ_HOST=localhost
 NODE_ENV=dev
+INTERNAL_JWT_PUBLIC_KEY_B64=<chave-publica-gerada-pelo-script>
 ```
 
 ### AI Service
@@ -529,9 +538,12 @@ FINANCIAL_SERVER=http://localhost:3004
 FINANCIAL_TIMEOUT_MS=3000
 DATABASE_URL=postgres://admin:admin@localhost:5432/ai
 KNOWLEDGE_MAX_DISTANCE=0.35
+INTERNAL_JWT_PUBLIC_KEY_B64=<chave-publica-gerada-pelo-script>
 ```
 
 O `GEMINI_FALLBACK_MODEL` é opcional: sem ele, o serviço usa apenas o modelo principal. O `KNOWLEDGE_MAX_DISTANCE` também é opcional (padrão `0.35`); um valor inválido impede o serviço de subir.
+
+As chaves do token interno e o segredo do gateway são gerados como explicado em [Modelo de confiança entre os serviços](#modelo-de-confiança-entre-os-serviços). Cada serviço também traz um `.env.example`.
 
 ---
 
@@ -808,9 +820,63 @@ A API possui dois níveis de acesso:
 - **USER** → acesso apenas aos próprios dados
 - **ADMIN** → acesso completo
 
-A autenticação é centralizada no gateway — os serviços internos recebem os dados do usuário via headers `x-user-id`, `x-user-role` e `x-user-email`.
+A autenticação é centralizada no gateway. Os serviços internos recebem a identidade do usuário (id e role) somente dentro do token interno assinado pelo auth, nunca em headers soltos.
 
-No ai-service, um guard global rejeita com `401` qualquer requisição sem `x-user-id`. O assistente sempre opera apenas sobre os dados do próprio usuário, inclusive para ADMIN.
+No ai-service, um guard global rejeita com `401` qualquer requisição sem um token interno válido. O assistente sempre opera apenas sobre os dados do próprio usuário, inclusive para ADMIN.
+
+---
+
+# Modelo de confiança entre os serviços
+
+Os serviços internos não confiam em quem os chama: a identidade do usuário só é aceita dentro de um token assinado pelo auth-service. Quem acessar a porta de um serviço diretamente não consegue se passar por outro usuário, nem por ADMIN.
+
+```
+[ Client ] --token (JWT do cliente)--> [ API Gateway ]
+                                             |
+                                             | POST /internal/validate
+                                             | token + x-gateway-secret
+                                             v
+                                       [ Auth Service ]
+                                         valida o JWT e a blacklist
+                                         assina o token interno (ES256, 2 min)
+                                             |
+                                             v
+                     x-internal-token --> [ User | Financial | AI Service ]
+                                            verificam a assinatura com a chave pública
+                                             |
+   AI Service --mesmo x-internal-token--> [ Financial Service ]
+```
+
+| Segredo                        | Quem tem                    | Para quê                                          |
+| ------------------------------ | --------------------------- | ------------------------------------------------- |
+| `INTERNAL_JWT_PRIVATE_KEY_B64` | somente o auth              | assinar o token interno                           |
+| `INTERNAL_JWT_PUBLIC_KEY_B64`  | user, financial, ai-service | verificar a assinatura do token interno           |
+| `GATEWAY_SHARED_SECRET`        | auth e gateway              | garantir que só o gateway peça um token interno   |
+
+- **Token interno:** JWT ES256 com emissor `auth-service`, audiência `internal`, `sub` igual ao id do usuário, `role` e `email`, válido por 2 minutos. O gateway pede um novo a cada requisição autenticada, depois da checagem da blacklist
+- **Verificação:** os serviços aceitam somente ES256 e conferem assinatura, emissor, audiência e validade. Token ausente ou inválido responde `401`, sem informar o motivo
+- **Headers soltos não valem:** o gateway descarta `x-user-*`, `x-internal-token` e `x-gateway-secret` enviados pelo cliente, em todas as rotas, e não envia `x-user-*`. Os serviços ignoram esses headers
+- **Propagação:** o ai-service repassa ao financial o mesmo token que recebeu. Nenhum serviço além do auth emite tokens internos
+- **Sem chave, o serviço não sobe:** chave ausente, inválida, de outra curva ou a chave privada no lugar da pública impedem o serviço de iniciar
+- **Rotas sem token interno:** `POST /user` (cadastro público) e `POST /user/authenticate` (chamada pelo auth no login), além de `/metrics` e dos consumers do RabbitMQ
+
+Para gerar o par de chaves (a privada vai só no `.env` do auth; a pública, no do user, do financial e do ai-service):
+
+```bash
+./scripts/generate-internal-keys.sh
+```
+
+Para gerar o segredo compartilhado (o mesmo valor no `.env` do auth e do gateway):
+
+```bash
+openssl rand -base64 32
+```
+
+Limitações conhecidas:
+
+- Depois de um logout, o gateway não consegue mais tokens internos para aquele JWT, mas um token interno já emitido continua válido até expirar (no máximo 2 minutos)
+- Um token interno vazado pode ser reutilizado por até 2 minutos
+- `POST /user/authenticate` continua acessível diretamente na porta do user-service, sem o rate limit do gateway
 
 ---
 
@@ -877,11 +943,11 @@ O projeto possui testes unitários com Jest cobrindo a lógica de negócio dos s
 
 | Serviço      | Cobertura                                                                                                                                                                                                                                                                                                                           |
 | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `auth`       | Login (sucesso, credenciais inválidas, serviço indisponível), validação de token (válido, ausente, blacklist, inválido), logout                                                                                                                                                                                                     |
-| `user`       | Criação (novo, CPF/email duplicado, reativação de deletado), busca por ID com cache (HIT/MISS), autenticação, atualização e remoção (soft delete)                                                                                                                                                                                   |
-| `financial`  | Transações (depósito, saque, transferência, saldo insuficiente), contas (criação, conflito de tipo duplicado, busca, desativação)                                                                                                                                                                                                   |
-| `gateway`    | Rate limiting (incremento, TTL, bloqueio em 429), rotas públicas vs protegidas, autenticação (token válido/inválido/ausente, serviço indisponível)                                                                                                                                                                                  |
-| `ai-service` | Structured output (retry e erro), mapeamento Gemini, classificação de erros do provedor, retry com backoff, fallback de modelo, verificação de dono, tools financeiras (totais em centavos, gastos vs transferências, filtros, truncamento), loop do agente (limite de iterações), e2e com guard, validação e erros 401/400/502/503 |
+| `auth`       | Login (sucesso, credenciais inválidas, serviço indisponível), validação de token (válido, ausente, blacklist, inválido), logout, emissão do token interno só com o segredo do gateway                                                                                                                                                                                                     |
+| `user`       | Criação (novo, CPF/email duplicado, reativação de deletado), busca por ID com cache (HIT/MISS), autenticação, atualização e remoção (soft delete), token interno nas rotas protegidas (x-user-* ignorados)                                                                                                                                                                                   |
+| `financial`  | Transações (depósito, saque, transferência, saldo insuficiente), contas (criação, conflito de tipo duplicado, busca, desativação), verificação do token interno (chave, algoritmo, emissor, audiência, validade)                                                                                                                                                                                                   |
+| `gateway`    | Rate limiting (incremento, TTL, bloqueio em 429), rotas públicas vs protegidas, autenticação (token válido/inválido/ausente, serviço indisponível), descarte de headers internos forjados e repasse só do token interno                                                                                                                                                                                  |
+| `ai-service` | Structured output (retry e erro), mapeamento Gemini, classificação de erros do provedor, retry com backoff, fallback de modelo, verificação de dono, tools financeiras (totais em centavos, gastos vs transferências, filtros, truncamento), loop do agente (limite de iterações), e2e com guard, validação e erros 401/400/502/503, token interno no guard e repasse ao financial |
 
 No ai-service, os testes foram escritos antes da implementação (test-first), e os testes e2e sobem a aplicação inteira trocando o LLM e o financial-service por fakes. Por isso o CI não precisa de chave de API nem gasta cota do provedor. Tempo e aleatoriedade (relógio, espera do retry e jitter) são injetados, então os testes de retry rodam sem esperas reais.
 
