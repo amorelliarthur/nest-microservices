@@ -12,7 +12,8 @@ const PUBLIC_ROUTES = [
   { path: '/auth/logout', method: 'POST' },
 ];
 
-// headers que só o gateway pode definir: os enviados pelo cliente são descartados
+// headers internos: os enviados pelo cliente são sempre descartados (x-user-* não é
+// mais repassado, mas continua removido para nenhum serviço voltar a confiar nele)
 const INTERNAL_HEADER_PREFIX = 'x-user-';
 const INTERNAL_TOKEN_HEADER = 'x-internal-token';
 const GATEWAY_SECRET_HEADER = 'x-gateway-secret';
@@ -146,10 +147,8 @@ export class AuthMiddleware implements NestMiddleware {
     // injeta o usuário na request
     req.user = data;
 
-    // repassa os dados do usuário para os serviços internos
-    req.headers['x-user-id'] = data.id;
-    req.headers['x-user-role'] = data.role;
-    req.headers['x-user-email'] = data.email;
+    // a identidade segue só no token interno assinado pelo auth; os serviços
+    // verificam a assinatura e nunca leem headers x-user-*
     req.headers[INTERNAL_TOKEN_HEADER] = data.internalToken;
     next();
   }

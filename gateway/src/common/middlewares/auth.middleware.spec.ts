@@ -227,7 +227,7 @@ describe('AuthMiddleware', () => {
       expect(next).not.toHaveBeenCalled();
     });
 
-    it('deve injetar os headers x-user-* e chamar next() quando o token é válido', async () => {
+    it('deve chamar next() sem injetar headers x-user-* quando o token é válido', async () => {
       const req = buildRequest({
         url: '/user/me',
         method: 'GET',
@@ -258,9 +258,11 @@ describe('AuthMiddleware', () => {
         },
       );
       expect(req.headers['x-gateway-secret']).toBeUndefined();
-      expect(req.headers['x-user-id']).toBe(payload.id);
-      expect(req.headers['x-user-role']).toBe(payload.role);
-      expect(req.headers['x-user-email']).toBe(payload.email);
+      // a identidade segue só no token interno assinado, nunca em headers soltos
+      expect(req.headers['x-internal-token']).toBe(payload.internalToken);
+      expect(req.headers['x-user-id']).toBeUndefined();
+      expect(req.headers['x-user-role']).toBeUndefined();
+      expect(req.headers['x-user-email']).toBeUndefined();
       expect(next).toHaveBeenCalled();
     });
 
@@ -289,7 +291,7 @@ describe('AuthMiddleware', () => {
       expect(next).toHaveBeenCalled();
     });
 
-    it('deve substituir os headers internos forjados pelo cliente pelos do auth-service', async () => {
+    it('deve descartar os headers internos forjados pelo cliente e repassar só o token do auth-service', async () => {
       const req = buildRequest({
         url: '/financial/accounts/me',
         method: 'GET',
@@ -317,8 +319,8 @@ describe('AuthMiddleware', () => {
 
       await middleware.use(req, res, next);
 
-      expect(req.headers['x-user-id']).toBe('user-1');
-      expect(req.headers['x-user-role']).toBe('USER');
+      expect(req.headers['x-user-id']).toBeUndefined();
+      expect(req.headers['x-user-role']).toBeUndefined();
       expect(req.headers['x-user-extra']).toBeUndefined();
       expect(req.headers['x-internal-token']).toBe('token-interno');
       expect(req.headers['x-gateway-secret']).toBeUndefined();
