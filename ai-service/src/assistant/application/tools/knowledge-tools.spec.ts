@@ -6,6 +6,8 @@ import { SourceCollector } from '../citations';
 import { createKnowledgeTools } from './knowledge-tools';
 import { ToolRegistry } from './tool-registry';
 
+const caller = { userId: 'user-1', internalToken: 'internal-token-1' };
+
 const makeSut = (embeddings = new FakeEmbeddingProvider()) => {
   const repository = new FakeKnowledgeRepository();
   const search = new KnowledgeSearchService(embeddings, repository, {
@@ -21,7 +23,7 @@ const makeSut = (embeddings = new FakeEmbeddingProvider()) => {
 const run = (registry: ToolRegistry, args: Record<string, unknown>) =>
   registry.execute(
     { id: 'call-1', name: 'search_knowledge', arguments: args },
-    { userId: 'user-1' },
+    { caller },
   );
 
 describe('search_knowledge tool', () => {
@@ -76,7 +78,7 @@ describe('search_knowledge tool', () => {
         name: 'search_knowledge',
         arguments: { query: 'sem saldo' },
       },
-      { userId: 'user-1', sources },
+      { caller, sources },
     );
 
     expect(sources.get('produto-transacoes#saldo-insuficiente')).toEqual({

@@ -59,8 +59,8 @@ export const createFinancialTools = (
     description:
       'Lists the bank accounts of the current user, with type and current balance.',
     schema: z.object({}),
-    execute: (_args, { userId }) =>
-      safely(() => financialData.listAccounts(userId)),
+    execute: (_args, { caller }) =>
+      safely(() => financialData.listAccounts(caller)),
   }),
 
   defineTool({
@@ -68,9 +68,9 @@ export const createFinancialTools = (
     description:
       'Returns the current balance of one account of the current user.',
     schema: z.object({ accountId: accountIdField }),
-    execute: ({ accountId }, { userId }) =>
+    execute: ({ accountId }, { caller }) =>
       safely(async () => {
-        const account = await financialData.getAccount(userId, accountId);
+        const account = await financialData.getAccount(caller, accountId);
         return {
           accountId: account.id,
           type: account.type,
@@ -98,11 +98,11 @@ export const createFinancialTools = (
         .optional()
         .describe('DEPOSIT = money in; WITHDRAWAL and TRANSFER = money out'),
     }),
-    execute: ({ accountId, from, to, type }, { userId }) =>
+    execute: ({ accountId, from, to, type }, { caller }) =>
       safely(async () => {
         // Datas em UTC: "to" inclui o dia inteiro
         const transactions = await financialData.listTransactions(
-          userId,
+          caller,
           accountId,
           {
             from: from ? new Date(`${from}T00:00:00.000Z`) : undefined,

@@ -53,6 +53,30 @@ describe('POST /assistant/ask (e2e)', () => {
     });
   });
 
+  it('forwards the internal token it received when calling the financial service', async () => {
+    const financialSpy = new FakeFinancialClient({
+      'user-1': [{ id: 'acc-1', type: 'CHECKING', balance: 10 }],
+    });
+    ({ app, authHeaders } = await createTestApp({
+      llmReplies: [
+        { toolCalls: [{ id: 'call-1', name: 'list_accounts', arguments: {} }] },
+        'Você tem uma conta.',
+      ],
+      financial: financialSpy,
+    }));
+    const headers = authHeaders('user-1');
+
+    await request(app.getHttpServer())
+      .post('/assistant/ask')
+      .set(headers)
+      .send({ question: 'Quais são minhas contas?' })
+      .expect(200);
+
+    expect(financialSpy.callers).toEqual([
+      { userId: 'user-1', internalToken: headers['x-internal-token'] },
+    ]);
+  });
+
   it('never exposes accounts of another user, even if the model asks for them', async () => {
     await createApp([
       {

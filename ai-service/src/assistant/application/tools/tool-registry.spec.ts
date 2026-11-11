@@ -8,8 +8,8 @@ const echoTool = defineTool({
   name: 'echo_account',
   description: 'Echoes the account and the user',
   schema: z.object({ accountId: z.string().min(1) }),
-  execute: ({ accountId }, { userId }) =>
-    Promise.resolve({ accountId, userId }),
+  execute: ({ accountId }, { caller }) =>
+    Promise.resolve({ accountId, userId: caller.userId }),
 });
 
 const notFoundTool = defineTool({
@@ -32,7 +32,9 @@ const call = (name: string, args: Record<string, unknown> = {}): ToolCall => ({
   arguments: args,
 });
 
-const context = { userId: 'user-1' };
+const context = {
+  caller: { userId: 'user-1', internalToken: 'internal-token-1' },
+};
 
 describe('ToolRegistry', () => {
   const registry = new ToolRegistry([echoTool, notFoundTool, buggyTool]);

@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import type { Caller } from '../../shared/auth/caller';
 import { AccountNotFoundError } from '../domain/account-not-found.error';
 import { FINANCIAL_CLIENT } from '../domain/financial-client.port';
 import type { FinancialClient } from '../domain/financial-client.port';
@@ -20,29 +21,29 @@ export class FinancialDataService {
     @Inject(FINANCIAL_CLIENT) private readonly client: FinancialClient,
   ) {}
 
-  listAccounts(userId: string): Promise<FinancialAccount[]> {
-    return this.client.listAccounts(userId);
+  listAccounts(caller: Caller): Promise<FinancialAccount[]> {
+    return this.client.listAccounts(caller);
   }
 
   async getAccount(
-    userId: string,
+    caller: Caller,
     accountId: string,
   ): Promise<FinancialAccount> {
-    const accounts = await this.client.listAccounts(userId);
+    const accounts = await this.client.listAccounts(caller);
     const account = accounts.find((a) => a.id === accountId);
     if (!account) throw new AccountNotFoundError(accountId);
     return account;
   }
 
   async listTransactions(
-    userId: string,
+    caller: Caller,
     accountId: string,
     filter: TransactionFilter = {},
   ): Promise<FinancialTransaction[]> {
     // Verifica o dono ANTES de buscar: dados de contas alheias nunca entram no serviço
-    await this.getAccount(userId, accountId);
+    await this.getAccount(caller, accountId);
 
-    const transactions = await this.client.listTransactions(userId, accountId);
+    const transactions = await this.client.listTransactions(caller, accountId);
 
     return transactions.filter(
       (t) =>
