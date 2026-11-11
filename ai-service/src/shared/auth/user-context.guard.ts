@@ -5,20 +5,28 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import type { RequestWithUser } from './authenticated-user';
+import { InternalTokenVerifier } from './internal-token.verifier';
 
-// O gateway valida o token e injeta x-user-*; este serviço só aceita requisições com esse contexto
+// Header where the gateway (and internal services) forward the auth-issued token
+export const INTERNAL_TOKEN_HEADER = 'x-internal-token';
+
+// Only requests with a valid internal token get through. The identity comes from
+// the token; x-user-* headers are never read. The token is kept so it can be
+// forwarded to the financial service on behalf of the same user.
 @Injectable()
 export class UserContextGuard implements CanActivate {
+  constructor(private readonly verifier: InternalTokenVerifier) {}
+
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest<RequestWithUser>();
-    const id = request.headers['x-user-id'];
-    const role = request.headers['x-user-role'];
+    const token = request.headers[INTERNAL_TOKEN_HEADER];
+    const identity = this.verifier.verify(token);
 
-    if (typeof id !== 'string' || id.trim() === '') {
+    if (!identity || typeof token !== 'string') {
       throw new UnauthorizedException('Missing user context');
     }
 
-    request.user = { id, role: typeof role === 'string' ? role : 'USER' };
+    request.user = { ...identity, internalToken: token };
     return true;
   }
 }
