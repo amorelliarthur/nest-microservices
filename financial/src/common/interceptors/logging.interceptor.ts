@@ -53,7 +53,16 @@ export class LoggingInterceptor implements NestInterceptor {
   private maskSensitive(data: LoggableData): Record<string, unknown> {
     if (!data || typeof data !== 'object') return {};
 
-    const sensitive = ['senha', 'token', 'authorization', 'cookie', 'cpf'];
+    // x-internal-token: quem o lê pode agir como o usuário nos serviços internos
+    const sensitive = [
+      'senha',
+      'token',
+      'authorization',
+      'cookie',
+      'cpf',
+      'x-internal-token',
+      'x-gateway-secret',
+    ];
     const masked: Record<string, unknown> = { ...data };
 
     for (const key of Object.keys(masked)) {
