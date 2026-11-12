@@ -221,6 +221,8 @@ describe('AuthMiddleware', () => {
       ['/user/authenticate', 'POST'],
       ['/user/authenticate/', 'POST'],
       ['/user/authenticate?email=ana', 'POST'],
+      ['/user/authenticate#x', 'POST'],
+      ['/user/authenticate/#x?email=ana', 'POST'],
       ['/USER/Authenticate', 'POST'],
       ['//user//authenticate', 'POST'],
       ['/user/%61uthenticate', 'POST'],

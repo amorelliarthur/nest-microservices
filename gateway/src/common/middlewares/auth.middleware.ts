@@ -23,10 +23,11 @@ const SERVICE_TOKEN_HEADER = 'x-service-token';
 // o token de serviço do auth; aqui é a segunda barreira)
 const INTERNAL_ONLY_PATHS = ['/user/authenticate'];
 
-// normaliza como o Express casaria a rota: sem query, sem barras repetidas ou
-// finais, decodificado e sem diferença de maiúsculas
+// normaliza como o Express casaria a rota: sem query nem fragmento (o parseurl
+// do Express corta nos dois), sem barras repetidas ou finais, decodificado e
+// sem diferença de maiúsculas
 const normalizePath = (url: string): string => {
-  const pathname = url.split('?')[0];
+  const pathname = url.split(/[?#]/)[0];
   let decoded: string;
   try {
     decoded = decodeURIComponent(pathname);
