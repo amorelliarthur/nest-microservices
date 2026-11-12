@@ -8,6 +8,7 @@ import { AuthService } from './auth.service';
 import { RedisService } from '../common/redis/redis.service';
 import { StringValue } from 'ms';
 import { InternalTokenIssuer } from '../internal-token/internal-token.issuer';
+import { ServiceTokenIssuer } from '../internal-token/service-token.issuer';
 import { loadInternalPrivateKey } from '../internal-token/internal-keys';
 import {
   GATEWAY_SECRET_VERIFIER,
@@ -51,6 +52,17 @@ import { GatewaySecretGuard } from '../internal-token/gateway-secret.guard';
       inject: [ConfigService],
       useFactory: (config: ConfigService) =>
         new InternalTokenIssuer(
+          loadInternalPrivateKey(
+            config.get<string>('INTERNAL_JWT_PRIVATE_KEY_B64'),
+          ),
+        ),
+    },
+    {
+      // mesma chave do token interno; a audiência é que separa os dois
+      provide: ServiceTokenIssuer,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) =>
+        new ServiceTokenIssuer(
           loadInternalPrivateKey(
             config.get<string>('INTERNAL_JWT_PRIVATE_KEY_B64'),
           ),

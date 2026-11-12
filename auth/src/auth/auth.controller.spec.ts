@@ -9,6 +9,7 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { RedisService } from '../common/redis/redis.service';
 import { InternalTokenIssuer } from '../internal-token/internal-token.issuer';
+import { ServiceTokenIssuer } from '../internal-token/service-token.issuer';
 
 // AuthService real: garante pela rota HTTP que a validação pública,
 // encaminhada pelo gateway, nunca devolve o token interno
@@ -28,6 +29,7 @@ describe('AuthController (POST /auth/validaToken)', () => {
         { provide: ConfigService, useValue: { get: jest.fn() } },
         { provide: RedisService, useValue: mockRedisService },
         { provide: InternalTokenIssuer, useValue: mockInternalTokenIssuer },
+        { provide: ServiceTokenIssuer, useValue: { issue: jest.fn() } },
       ],
     }).compile();
 

@@ -10,6 +10,10 @@ import { RedisService } from '../common/redis/redis.service';
 import { firstValueFrom } from 'rxjs';
 import { LoginDto } from './dto/login.dto';
 import { InternalTokenIssuer } from '../internal-token/internal-token.issuer';
+import { ServiceTokenIssuer } from '../internal-token/service-token.issuer';
+
+// header em que o auth se identifica ao user-service
+const SERVICE_TOKEN_HEADER = 'x-service-token';
 
 // formato retornado pelo user-service em /user/authenticate
 interface AuthenticatedUser {
@@ -45,10 +49,14 @@ export class AuthService {
     private readonly configService: ConfigService,
     private readonly redisService: RedisService,
     private readonly internalTokenIssuer: InternalTokenIssuer,
+    private readonly serviceTokenIssuer: ServiceTokenIssuer,
   ) {}
 
   async login(dto: LoginDto) {
     const userServer = this.configService.get<string>('USER_SERVER');
+
+    // fora do try: uma falha ao emitir não pode virar "User service indisponível"
+    const serviceToken = this.serviceTokenIssuer.issue();
 
     try {
       // Chama o user-service para autenticar
@@ -56,7 +64,10 @@ export class AuthService {
         this.httpService.post<AuthenticatedUser>(
           `http://${userServer}/user/authenticate`,
           { email: dto.email, senha: dto.senha },
-          { timeout: 5000 },
+          {
+            headers: { [SERVICE_TOKEN_HEADER]: serviceToken },
+            timeout: 5000,
+          },
         ),
       );
 
