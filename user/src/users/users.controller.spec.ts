@@ -165,14 +165,56 @@ describe('UsersController (HTTP)', () => {
         .send({ nome: 'Ana' })
         .expect(201);
     });
+  });
 
-    it('POST /user/authenticate (usada pelo auth no login) não deve exigir token', async () => {
+  describe('POST /user/authenticate (só o auth, no login)', () => {
+    const credenciais = { email: 'ana@example.com', senha: 'Teste@123' };
+
+    it('deve autenticar com o token de serviço do auth', async () => {
       usersService.authenticate.mockResolvedValue({ _id: 'user-1' });
 
       await request(app.getHttpServer())
         .post('/user/authenticate')
-        .send({ email: 'ana@example.com', senha: 'Teste@123' })
+        .set('x-service-token', tokens.issueService())
+        .send(credenciais)
         .expect(200);
+
+      expect(usersService.authenticate).toHaveBeenCalledWith(
+        credenciais.email,
+        credenciais.senha,
+      );
+    });
+
+    it('deve responder 401 sem o token de serviço', async () => {
+      await request(app.getHttpServer())
+        .post('/user/authenticate')
+        .send(credenciais)
+        .expect(401);
+
+      expect(usersService.authenticate).not.toHaveBeenCalled();
+    });
+
+    it('deve responder 401 com um token interno de usuário, mesmo de ADMIN', async () => {
+      await request(app.getHttpServer())
+        .post('/user/authenticate')
+        .set({
+          'x-service-token': tokens.issue('admin-1', 'ADMIN'),
+          'x-internal-token': tokens.issue('admin-1', 'ADMIN'),
+        })
+        .send(credenciais)
+        .expect(401);
+
+      expect(usersService.authenticate).not.toHaveBeenCalled();
+    });
+
+    it('deve responder 401 com um token de serviço de outro serviço', async () => {
+      await request(app.getHttpServer())
+        .post('/user/authenticate')
+        .set('x-service-token', tokens.issueService('financial-service'))
+        .send(credenciais)
+        .expect(401);
+
+      expect(usersService.authenticate).not.toHaveBeenCalled();
     });
   });
 });

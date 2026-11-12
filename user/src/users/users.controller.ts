@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import { CurrentRequester } from '../common/auth/current-requester.decorator';
 import { InternalTokenGuard } from '../common/auth/internal-token.guard';
+import { ServiceTokenGuard } from '../common/auth/service-token.guard';
 import type { Requester } from '../common/auth/requester';
 import { AdminGuard } from '../common/guards/admin.guard';
 import { OwnerOrAdminGuard } from '../common/guards/owner-or-admin.guard';
@@ -31,8 +32,9 @@ export class UsersController {
     return this.usersService.create(dto);
   }
 
-  // Rota interna usada pelo auth-service
+  // Rota interna: só o auth-service, que se identifica com o token de serviço
   @Post('authenticate')
+  @UseGuards(ServiceTokenGuard)
   @HttpCode(HttpStatus.OK)
   authenticate(@Body() body: { email: string; senha: string }) {
     return this.usersService.authenticate(body.email, body.senha);

@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { loadInternalPublicKey } from './internal-keys';
 import { InternalTokenGuard } from './internal-token.guard';
 import { InternalTokenVerifier } from './internal-token.verifier';
+import { ServiceTokenGuard } from './service-token.guard';
 
 @Module({
   providers: [
@@ -18,7 +19,8 @@ import { InternalTokenVerifier } from './internal-token.verifier';
         ),
     },
     InternalTokenGuard,
+    ServiceTokenGuard,
   ],
-  exports: [InternalTokenVerifier, InternalTokenGuard],
+  exports: [InternalTokenVerifier, InternalTokenGuard, ServiceTokenGuard],
 })
 export class InternalAuthModule {}

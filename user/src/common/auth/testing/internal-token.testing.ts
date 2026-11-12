@@ -17,12 +17,23 @@ export const createInternalTokenTestKit = () => {
       expiresIn: 120,
     });
 
+  // token com que o auth se identifica no login
+  const issueService = (subject = 'auth-service'): string =>
+    sign({}, privateKey, {
+      algorithm: 'ES256',
+      subject,
+      issuer: 'auth-service',
+      audience: 'user-service',
+      expiresIn: 30,
+    });
+
   const publicKeyBase64 = Buffer.from(
     publicKey.export({ type: 'spki', format: 'pem' }).toString(),
   ).toString('base64');
 
   return {
     issue,
+    issueService,
     publicKeyBase64,
     verifier: new InternalTokenVerifier(publicKey),
   };
