@@ -185,6 +185,7 @@ describe('AuthMiddleware', () => {
             'x-user-email': 'arthur@user.br',
             'x-internal-token': 'token-forjado',
             'x-gateway-secret': 'segredo-forjado',
+            'x-service-token': 'token-de-servico-forjado',
           },
         });
         const res = buildResponse();
@@ -192,6 +193,7 @@ describe('AuthMiddleware', () => {
 
         await middleware.use(req, res, next);
 
+        expect(req.headers['x-service-token']).toBeUndefined();
         expect(req.headers['x-gateway-secret']).toBeUndefined();
         expect(req.headers['x-user-id']).toBeUndefined();
         expect(req.headers['x-user-role']).toBeUndefined();
@@ -211,6 +213,80 @@ describe('AuthMiddleware', () => {
 
       expect(res.status).toHaveBeenCalledWith(401);
       expect(next).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('rota interna do login (/user/authenticate)', () => {
+    it.each([
+      ['/user/authenticate', 'POST'],
+      ['/user/authenticate/', 'POST'],
+      ['/user/authenticate?email=ana', 'POST'],
+      ['/user/authenticate#x', 'POST'],
+      ['/user/authenticate/#x?email=ana', 'POST'],
+      ['/USER/Authenticate', 'POST'],
+      ['//user//authenticate', 'POST'],
+      ['/user/%61uthenticate', 'POST'],
+      ['/user/authenticate', 'GET'],
+    ])(
+      'deve responder 404 sem repassar %s %s, mesmo com token válido',
+      async (url, method) => {
+        const req = buildRequest({
+          url,
+          method,
+          headers: { token: 'token-valido' },
+        });
+        const res = buildResponse();
+        const next = jest.fn();
+
+        await middleware.use(req, res, next);
+
+        expect(res.status).toHaveBeenCalledWith(404);
+        expect(res.json).toHaveBeenCalledWith({
+          statusCode: 404,
+          message: 'Rota não encontrada',
+          error: 'Not Found',
+        });
+        expect(httpService.post).not.toHaveBeenCalled();
+        expect(next).not.toHaveBeenCalled();
+      },
+    );
+
+    it('deve contar a tentativa no rate limit', async () => {
+      const req = buildRequest({ url: '/user/authenticate', method: 'POST' });
+      const res = buildResponse();
+      redisService.increment.mockResolvedValue(101);
+      redisService.ttl.mockResolvedValue(10);
+
+      await middleware.use(req, res, jest.fn());
+
+      expect(redisService.increment).toHaveBeenCalledWith(
+        'rate_limit:127.0.0.1',
+      );
+      expect(res.status).toHaveBeenCalledWith(429);
+    });
+
+    it('não deve bloquear outras rotas do user com prefixo parecido', async () => {
+      const req = buildRequest({
+        url: '/user/authenticated-users',
+        method: 'GET',
+        headers: { token: 'token-valido' },
+      });
+      const res = buildResponse();
+      const next = jest.fn();
+      httpService.post.mockReturnValue(
+        of({
+          data: {
+            id: 'user-1',
+            role: 'USER',
+            email: 'arthur@user.br',
+            internalToken: 'token-interno',
+          },
+        }),
+      );
+
+      await middleware.use(req, res, next);
+
+      expect(next).toHaveBeenCalled();
     });
   });
 
@@ -302,6 +378,7 @@ describe('AuthMiddleware', () => {
           'x-user-extra': 'forjado',
           'x-internal-token': 'token-forjado',
           'x-gateway-secret': 'segredo-forjado',
+          'x-service-token': 'token-de-servico-forjado',
         },
       });
       const res = buildResponse();
@@ -324,6 +401,7 @@ describe('AuthMiddleware', () => {
       expect(req.headers['x-user-extra']).toBeUndefined();
       expect(req.headers['x-internal-token']).toBe('token-interno');
       expect(req.headers['x-gateway-secret']).toBeUndefined();
+      expect(req.headers['x-service-token']).toBeUndefined();
     });
 
     it('deve retornar 401 quando o auth-service responde com 401 (token inválido)', async () => {

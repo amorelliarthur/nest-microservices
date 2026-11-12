@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   UnauthorizedException,
   ServiceUnavailableException,
 } from '@nestjs/common';
@@ -10,6 +11,10 @@ import { RedisService } from '../common/redis/redis.service';
 import { firstValueFrom } from 'rxjs';
 import { LoginDto } from './dto/login.dto';
 import { InternalTokenIssuer } from '../internal-token/internal-token.issuer';
+import { ServiceTokenIssuer } from '../internal-token/service-token.issuer';
+
+// header em que o auth se identifica ao user-service
+const SERVICE_TOKEN_HEADER = 'x-service-token';
 
 // formato retornado pelo user-service em /user/authenticate
 interface AuthenticatedUser {
@@ -39,16 +44,22 @@ const isNonEmptyString = (value: unknown): value is string =>
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly jwtService: JwtService,
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
     private readonly redisService: RedisService,
     private readonly internalTokenIssuer: InternalTokenIssuer,
+    private readonly serviceTokenIssuer: ServiceTokenIssuer,
   ) {}
 
   async login(dto: LoginDto) {
     const userServer = this.configService.get<string>('USER_SERVER');
+
+    // fora do try: uma falha ao emitir não pode virar "User service indisponível"
+    const serviceToken = this.serviceTokenIssuer.issue();
 
     try {
       // Chama o user-service para autenticar
@@ -56,7 +67,10 @@ export class AuthService {
         this.httpService.post<AuthenticatedUser>(
           `http://${userServer}/user/authenticate`,
           { email: dto.email, senha: dto.senha },
-          { timeout: 5000 },
+          {
+            headers: { [SERVICE_TOKEN_HEADER]: serviceToken },
+            timeout: 5000,
+          },
         ),
       );
 
@@ -69,7 +83,17 @@ export class AuthService {
 
       return { user: user.email, token };
     } catch (err: unknown) {
-      const error = err as { response?: unknown };
+      // só o status: o objeto do axios traz o corpo (senha) e os headers (token)
+      const error = err as { response?: { status?: number } };
+
+      // O user recusou o token de serviço: deploy fora de ordem, chaves que não
+      // formam par ou relógios divergentes. Não é culpa de quem tenta logar.
+      if (error.response?.status === 403) {
+        this.logger.error(
+          'User service rejected the auth service token: check INTERNAL_JWT keys, deploy order and clocks',
+        );
+        throw new ServiceUnavailableException('User service indisponível');
+      }
 
       // Erro vindo do user-service (ex: senha inválida, não encontrado)
       if (error.response) {

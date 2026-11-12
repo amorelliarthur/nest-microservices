@@ -6,6 +6,11 @@ import type { Requester } from './requester';
 export const INTERNAL_TOKEN_ISSUER = 'auth-service';
 export const INTERNAL_TOKEN_AUDIENCE = 'internal';
 
+// Token com que o próprio auth se identifica (não um usuário). A audiência
+// diferente impede que um token de um tipo seja aceito no lugar do outro.
+export const SERVICE_TOKEN_AUDIENCE = 'user-service';
+export const AUTH_SERVICE_SUBJECT = 'auth-service';
+
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === 'string' && value.trim() !== '';
 
@@ -43,5 +48,24 @@ export class InternalTokenVerifier {
     }
 
     return { id: sub, role };
+  }
+
+  // true só para o token de serviço do auth, válido e assinado pela chave dele
+  isAuthService(token: unknown): boolean {
+    if (!isNonEmptyString(token)) {
+      return false;
+    }
+
+    try {
+      verify(token, this.publicKey, {
+        algorithms: ['ES256'],
+        issuer: INTERNAL_TOKEN_ISSUER,
+        audience: SERVICE_TOKEN_AUDIENCE,
+        subject: AUTH_SERVICE_SUBJECT,
+      });
+      return true;
+    } catch {
+      return false;
+    }
   }
 }
