@@ -17,6 +17,27 @@ const PUBLIC_ROUTES = [
 const INTERNAL_HEADER_PREFIX = 'x-user-';
 const INTERNAL_TOKEN_HEADER = 'x-internal-token';
 const GATEWAY_SECRET_HEADER = 'x-gateway-secret';
+const SERVICE_TOKEN_HEADER = 'x-service-token';
+
+// rotas só entre serviços: o gateway nunca as repassa (o user também exige
+// o token de serviço do auth; aqui é a segunda barreira)
+const INTERNAL_ONLY_PATHS = ['/user/authenticate'];
+
+// normaliza como o Express casaria a rota: sem query, sem barras repetidas ou
+// finais, decodificado e sem diferença de maiúsculas
+const normalizePath = (url: string): string => {
+  const pathname = url.split('?')[0];
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(pathname);
+  } catch {
+    decoded = pathname;
+  }
+  return decoded
+    .replace(/\/{2,}/g, '/')
+    .replace(/\/+$/, '')
+    .toLowerCase();
+};
 
 const AUTH_TIMEOUT_MS = 3000;
 
@@ -85,6 +106,15 @@ export class AuthMiddleware implements NestMiddleware {
         statusCode: 429,
         message: `Muitas requisições. Tente novamente em ${ttl} segundos.`,
         error: 'Too Many Requests',
+      });
+      return;
+    }
+
+    if (INTERNAL_ONLY_PATHS.includes(normalizePath(req.url))) {
+      res.status(404).json({
+        statusCode: 404,
+        message: 'Rota não encontrada',
+        error: 'Not Found',
       });
       return;
     }
@@ -159,7 +189,8 @@ export class AuthMiddleware implements NestMiddleware {
       if (
         name.startsWith(INTERNAL_HEADER_PREFIX) ||
         name === INTERNAL_TOKEN_HEADER ||
-        name === GATEWAY_SECRET_HEADER
+        name === GATEWAY_SECRET_HEADER ||
+        name === SERVICE_TOKEN_HEADER
       ) {
         delete req.headers[name];
       }
