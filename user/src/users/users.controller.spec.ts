@@ -185,16 +185,17 @@ describe('UsersController (HTTP)', () => {
       );
     });
 
-    it('deve responder 401 sem o token de serviço', async () => {
+    it('deve responder 403 sem o token de serviço', async () => {
       await request(app.getHttpServer())
         .post('/user/authenticate')
         .send(credenciais)
-        .expect(401);
+        .expect(403)
+        .expect({ statusCode: 403, message: 'Forbidden' });
 
       expect(usersService.authenticate).not.toHaveBeenCalled();
     });
 
-    it('deve responder 401 com um token interno de usuário, mesmo de ADMIN', async () => {
+    it('deve responder 403 com um token interno de usuário, mesmo de ADMIN', async () => {
       await request(app.getHttpServer())
         .post('/user/authenticate')
         .set({
@@ -202,17 +203,17 @@ describe('UsersController (HTTP)', () => {
           'x-internal-token': tokens.issue('admin-1', 'ADMIN'),
         })
         .send(credenciais)
-        .expect(401);
+        .expect(403);
 
       expect(usersService.authenticate).not.toHaveBeenCalled();
     });
 
-    it('deve responder 401 com um token de serviço de outro serviço', async () => {
+    it('deve responder 403 com um token de serviço de outro serviço', async () => {
       await request(app.getHttpServer())
         .post('/user/authenticate')
         .set('x-service-token', tokens.issueService('financial-service'))
         .send(credenciais)
-        .expect(401);
+        .expect(403);
 
       expect(usersService.authenticate).not.toHaveBeenCalled();
     });

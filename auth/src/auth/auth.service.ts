@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   UnauthorizedException,
   ServiceUnavailableException,
 } from '@nestjs/common';
@@ -43,6 +44,8 @@ const isNonEmptyString = (value: unknown): value is string =>
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly jwtService: JwtService,
     private readonly httpService: HttpService,
@@ -80,7 +83,17 @@ export class AuthService {
 
       return { user: user.email, token };
     } catch (err: unknown) {
-      const error = err as { response?: unknown };
+      // só o status: o objeto do axios traz o corpo (senha) e os headers (token)
+      const error = err as { response?: { status?: number } };
+
+      // O user recusou o token de serviço: deploy fora de ordem, chaves que não
+      // formam par ou relógios divergentes. Não é culpa de quem tenta logar.
+      if (error.response?.status === 403) {
+        this.logger.error(
+          'User service rejected the auth service token: check INTERNAL_JWT keys, deploy order and clocks',
+        );
+        throw new ServiceUnavailableException('User service indisponível');
+      }
 
       // Erro vindo do user-service (ex: senha inválida, não encontrado)
       if (error.response) {

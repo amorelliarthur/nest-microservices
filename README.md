@@ -861,7 +861,8 @@ Os serviços internos não confiam em quem os chama: a identidade do usuário s�
 - **Propagação:** o ai-service repassa ao financial o mesmo token que recebeu. Nenhum serviço além do auth emite tokens internos
 - **Sem chave, o serviço não sobe:** chave ausente, inválida, de outra curva ou a chave privada no lugar da pública impedem o serviço de iniciar
 - **Rotas sem token interno:** `POST /user` (cadastro público), além de `/metrics` e dos consumers do RabbitMQ
-- **Rota do login só do auth:** `POST /user/authenticate` exige o token de serviço do auth (sem ele, `401`), e o gateway não a repassa (`404`). Assim, testar senhas só é possível pelo `POST /auth/login`, que passa pelo rate limit do gateway
+- **Rota do login só do auth:** `POST /user/authenticate` exige o token de serviço do auth (sem ele, `403` com mensagem genérica), e o gateway não a repassa (`404`). Assim, testar senhas só é possível pelo `POST /auth/login`, que passa pelo rate limit do gateway
+- **Recusa do token de serviço não é senha errada:** se o user recusar o token do auth (`403`), o login responde `503` e o auth registra um `ERROR`. Isso aponta chaves que não formam par, relógios divergentes (mais de 30 segundos) ou deploy fora de ordem: **implante o auth antes do user**, porque o user novo recusa logins de um auth que ainda não envia o token
 
 Para gerar o par de chaves (a privada vai só no `.env` do auth; a pública, no do user, do financial e do ai-service):
 

@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import {
+  Logger,
   UnauthorizedException,
   ServiceUnavailableException,
 } from '@nestjs/common';
@@ -111,6 +112,33 @@ describe('AuthService', () => {
       await expect(service.login(dto)).rejects.toThrow(
         'Email ou senha inválidos',
       );
+    });
+
+    it('deve lançar ServiceUnavailableException e registrar ERROR quando o user-service recusa o token de serviço (403)', async () => {
+      const dto = { email: 'user@test.com', senha: 'senha123' };
+      const errorSpy = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => {});
+
+      mockConfigService.get.mockReturnValue('localhost:3000');
+      mockServiceTokenIssuer.issue.mockReturnValue('service-token');
+      mockHttpService.post.mockReturnValue(
+        throwError(() => ({ response: { status: 403, data: 'Forbidden' } })),
+      );
+
+      await expect(service.login(dto)).rejects.toThrow(
+        ServiceUnavailableException,
+      );
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('service token'),
+      );
+      // nem a senha nem o token de serviço vão para o log
+      expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('senha123');
+      expect(JSON.stringify(errorSpy.mock.calls)).not.toContain(
+        'service-token',
+      );
+
+      errorSpy.mockRestore();
     });
 
     it('deve lançar ServiceUnavailableException quando user-service está fora do ar', async () => {
