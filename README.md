@@ -162,12 +162,13 @@ Responsabilidades:
 - Rotas públicas: `POST /auth/login`, `POST /user` e `POST /auth/logout`
 - Rate limiting por IP com Redis
 - Repasse da identidade do usuário no token interno assinado pelo auth (`x-internal-token`)
-- Descarte de headers internos enviados pelo cliente (`x-user-*`, `x-internal-token`, `x-gateway-secret`) em todas as rotas
+- Descarte de headers internos enviados pelo cliente (`x-user-*`, `x-internal-token`, `x-gateway-secret`, `x-service-token`) em todas as rotas
+- Bloqueio da rota interna `POST /user/authenticate`, que responde `404` e nunca é repassada
 
 Rotas expostas:
 
 - `/auth/*` → encaminha para auth-service
-- `/user/*` → encaminha para user-service
+- `/user/*` → encaminha para user-service (exceto `/user/authenticate`)
 - `/financial/*` → encaminha para financial-service
 - `/ai/*` → encaminha para ai-service (o prefixo `/ai` é removido)
 
@@ -177,7 +178,7 @@ Responsabilidades:
 
 - Login/Logout de usuários
 - Validação de token JWT
-- Comunicação com user-service para autenticação
+- Comunicação com user-service para autenticação, identificando-se com um token de serviço (`x-service-token`)
 - Blacklist de tokens no Redis (logout real)
 - Emissão do token interno (ES256) para o gateway em `POST /internal/validate`, protegida por segredo compartilhado
 
@@ -849,16 +850,18 @@ Os serviços internos não confiam em quem os chama: a identidade do usuário s�
 
 | Segredo                        | Quem tem                    | Para quê                                          |
 | ------------------------------ | --------------------------- | ------------------------------------------------- |
-| `INTERNAL_JWT_PRIVATE_KEY_B64` | somente o auth              | assinar o token interno                           |
-| `INTERNAL_JWT_PUBLIC_KEY_B64`  | user, financial, ai-service | verificar a assinatura do token interno           |
+| `INTERNAL_JWT_PRIVATE_KEY_B64` | somente o auth              | assinar o token interno e o token de serviço      |
+| `INTERNAL_JWT_PUBLIC_KEY_B64`  | user, financial, ai-service | verificar a assinatura desses tokens              |
 | `GATEWAY_SHARED_SECRET`        | auth e gateway              | garantir que só o gateway peça um token interno   |
 
 - **Token interno:** JWT ES256 com emissor `auth-service`, audiência `internal`, `sub` igual ao id do usuário, `role` e `email`, válido por 2 minutos. O gateway pede um novo a cada requisição autenticada, depois da checagem da blacklist
+- **Token de serviço:** no login, o auth se identifica ao user com um JWT ES256 próprio (`x-service-token`), com emissor e `sub` `auth-service` e audiência `user-service`, válido por 30 segundos. É assinado com a mesma chave do token interno, mas a audiência diferente impede que um seja aceito no lugar do outro: o token de serviço não vale como usuário em nenhum serviço, e um token interno de usuário, mesmo de ADMIN, não abre a rota do login
 - **Verificação:** os serviços aceitam somente ES256 e conferem assinatura, emissor, audiência e validade. Token ausente ou inválido responde `401`, sem informar o motivo
-- **Headers soltos não valem:** o gateway descarta `x-user-*`, `x-internal-token` e `x-gateway-secret` enviados pelo cliente, em todas as rotas, e não envia `x-user-*`. Os serviços ignoram esses headers
+- **Headers soltos não valem:** o gateway descarta `x-user-*`, `x-internal-token`, `x-gateway-secret` e `x-service-token` enviados pelo cliente, em todas as rotas, e não envia `x-user-*`. Os serviços ignoram esses headers
 - **Propagação:** o ai-service repassa ao financial o mesmo token que recebeu. Nenhum serviço além do auth emite tokens internos
 - **Sem chave, o serviço não sobe:** chave ausente, inválida, de outra curva ou a chave privada no lugar da pública impedem o serviço de iniciar
-- **Rotas sem token interno:** `POST /user` (cadastro público) e `POST /user/authenticate` (chamada pelo auth no login), além de `/metrics` e dos consumers do RabbitMQ
+- **Rotas sem token interno:** `POST /user` (cadastro público), além de `/metrics` e dos consumers do RabbitMQ
+- **Rota do login só do auth:** `POST /user/authenticate` exige o token de serviço do auth (sem ele, `401`), e o gateway não a repassa (`404`). Assim, testar senhas só é possível pelo `POST /auth/login`, que passa pelo rate limit do gateway
 
 Para gerar o par de chaves (a privada vai só no `.env` do auth; a pública, no do user, do financial e do ai-service):
 
@@ -876,7 +879,8 @@ Limitações conhecidas:
 
 - Depois de um logout, o gateway não consegue mais tokens internos para aquele JWT, mas um token interno já emitido continua válido até expirar (no máximo 2 minutos)
 - Um token interno vazado pode ser reutilizado por até 2 minutos
-- `POST /user/authenticate` continua acessível diretamente na porta do user-service, sem o rate limit do gateway
+- Um token de serviço vazado pode ser reutilizado por até 30 segundos para testar senhas direto na porta do user-service
+- `POST /auth/login` continua acessível diretamente na porta do auth-service, sem o rate limit do gateway
 
 ---
 
@@ -943,10 +947,10 @@ O projeto possui testes unitários com Jest cobrindo a lógica de negócio dos s
 
 | Serviço      | Cobertura                                                                                                                                                                                                                                                                                                                           |
 | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `auth`       | Login (sucesso, credenciais inválidas, serviço indisponível), validação de token (válido, ausente, blacklist, inválido), logout, emissão do token interno só com o segredo do gateway                                                                                                                                                                                                     |
-| `user`       | Criação (novo, CPF/email duplicado, reativação de deletado), busca por ID com cache (HIT/MISS), autenticação, atualização e remoção (soft delete), token interno nas rotas protegidas (x-user-* ignorados)                                                                                                                                                                                   |
+| `auth`       | Login (sucesso, credenciais inválidas, serviço indisponível), validação de token (válido, ausente, blacklist, inválido), logout, emissão do token interno só com o segredo do gateway, token de serviço no login (audiência separada do token interno)                                                                                                                                                                                                     |
+| `user`       | Criação (novo, CPF/email duplicado, reativação de deletado), busca por ID com cache (HIT/MISS), autenticação, atualização e remoção (soft delete), token interno nas rotas protegidas (x-user-* ignorados), login só com o token de serviço do auth                                                                                                                                                                                   |
 | `financial`  | Transações (depósito, saque, transferência, saldo insuficiente), contas (criação, conflito de tipo duplicado, busca, desativação), verificação do token interno (chave, algoritmo, emissor, audiência, validade)                                                                                                                                                                                                   |
-| `gateway`    | Rate limiting (incremento, TTL, bloqueio em 429), rotas públicas vs protegidas, autenticação (token válido/inválido/ausente, serviço indisponível), descarte de headers internos forjados e repasse só do token interno                                                                                                                                                                                  |
+| `gateway`    | Rate limiting (incremento, TTL, bloqueio em 429), rotas públicas vs protegidas, autenticação (token válido/inválido/ausente, serviço indisponível), descarte de headers internos forjados e repasse só do token interno, bloqueio de `/user/authenticate` (inclusive variações de caixa, barras e encoding)                                                                                                                                                                                  |
 | `ai-service` | Structured output (retry e erro), mapeamento Gemini, classificação de erros do provedor, retry com backoff, fallback de modelo, verificação de dono, tools financeiras (totais em centavos, gastos vs transferências, filtros, truncamento), loop do agente (limite de iterações), e2e com guard, validação e erros 401/400/502/503, token interno no guard e repasse ao financial |
 
 No ai-service, os testes foram escritos antes da implementação (test-first), e os testes e2e sobem a aplicação inteira trocando o LLM e o financial-service por fakes. Por isso o CI não precisa de chave de API nem gasta cota do provedor. Tempo e aleatoriedade (relógio, espera do retry e jitter) são injetados, então os testes de retry rodam sem esperas reais.
