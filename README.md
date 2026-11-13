@@ -160,7 +160,7 @@ Responsabilidades:
 - Proxy reverso com `http-proxy-middleware`
 - Autenticação centralizada via JWT
 - Rotas públicas: `POST /auth/login`, `POST /user` e `POST /auth/logout`
-- Rate limiting por IP com Redis
+- Rate limiting por IP com Redis, usando o IP da conexão (o `x-forwarded-for` enviado pelo cliente é ignorado)
 - Repasse da identidade do usuário no token interno assinado pelo auth (`x-internal-token`)
 - Descarte de headers internos enviados pelo cliente (`x-user-*`, `x-internal-token`, `x-gateway-secret`, `x-service-token`) em todas as rotas
 - Bloqueio da rota interna `POST /user/authenticate`, que responde `404` e nunca é repassada
@@ -334,6 +334,10 @@ Requisição chega no gateway
 ```
 
 **Configuração:** 100 requisições por IP a cada 60 segundos.
+
+**Identificação do cliente:** o IP vem da própria conexão TCP. O header `x-forwarded-for` é ignorado, porque é enviado pelo cliente: trocar o valor a cada requisição criaria um contador novo e anularia o limite, inclusive a proteção contra força bruta no `POST /auth/login`.
+
+**Limitação conhecida:** o gateway assume que é a borda da aplicação, sem proxy na frente. Atrás de um load balancer, todas as conexões chegariam do IP do proxy e todos os clientes dividiriam o mesmo contador. Nesse caso, seria preciso confiar só no valor que o proxy acrescenta ao fim do `x-forwarded-for` (o `trust proxy` do Express) e deixar o gateway acessível somente pelo proxy.
 
 ## 2. Sessão / Blacklist de Tokens — Auth Service
 
@@ -951,7 +955,7 @@ O projeto possui testes unitários com Jest cobrindo a lógica de negócio dos s
 | `auth`       | Login (sucesso, credenciais inválidas, serviço indisponível), validação de token (válido, ausente, blacklist, inválido), logout, emissão do token interno só com o segredo do gateway, token de serviço no login (audiência separada do token interno)                                                                                                                                                                                                     |
 | `user`       | Criação (novo, CPF/email duplicado, reativação de deletado), busca por ID com cache (HIT/MISS), autenticação, atualização e remoção (soft delete), token interno nas rotas protegidas (x-user-* ignorados), login só com o token de serviço do auth                                                                                                                                                                                   |
 | `financial`  | Transações (depósito, saque, transferência, saldo insuficiente), contas (criação, conflito de tipo duplicado, busca, desativação), verificação do token interno (chave, algoritmo, emissor, audiência, validade)                                                                                                                                                                                                   |
-| `gateway`    | Rate limiting (incremento, TTL, bloqueio em 429), rotas públicas vs protegidas, autenticação (token válido/inválido/ausente, serviço indisponível), descarte de headers internos forjados e repasse só do token interno, bloqueio de `/user/authenticate` (inclusive variações de caixa, barras e encoding)                                                                                                                                                                                  |
+| `gateway`    | Rate limiting (incremento, TTL, bloqueio em 429, IP da conexão sem confiar no `x-forwarded-for`), rotas públicas vs protegidas, autenticação (token válido/inválido/ausente, serviço indisponível), descarte de headers internos forjados e repasse só do token interno, bloqueio de `/user/authenticate` (inclusive variações de caixa, barras e encoding)                                                                                                                                                                                  |
 | `ai-service` | Structured output (retry e erro), mapeamento Gemini, classificação de erros do provedor, retry com backoff, fallback de modelo, verificação de dono, tools financeiras (totais em centavos, gastos vs transferências, filtros, truncamento), loop do agente (limite de iterações), e2e com guard, validação e erros 401/400/502/503, token interno no guard e repasse ao financial |
 
 No ai-service, os testes foram escritos antes da implementação (test-first), e os testes e2e sobem a aplicação inteira trocando o LLM e o financial-service por fakes. Por isso o CI não precisa de chave de API nem gasta cota do provedor. Tempo e aleatoriedade (relógio, espera do retry e jitter) são injetados, então os testes de retry rodam sem esperas reais.
