@@ -46,5 +46,35 @@ describe('CreateUserDto', () => {
         'CPF inválido',
       ]);
     });
+
+    it.each([
+      ['número', 12345678909],
+      ['null', null],
+      ['objeto', { numero: '12345678909' }],
+      ['lista', ['12345678909']],
+    ])(
+      'deve recusar um CPF que não é texto (%s) com "CPF inválido", sem estourar',
+      async (_tipo, cpf) => {
+        const { errors } = await validateBody({ ...validBody, cpf });
+
+        expect(errors).toHaveLength(1);
+        expect(errors[0].property).toBe('cpf');
+        expect(Object.values(errors[0].constraints ?? {})).toEqual([
+          'CPF inválido',
+        ]);
+      },
+    );
+
+    it('deve recusar a requisição sem CPF com "CPF inválido"', async () => {
+      const { cpf: _cpf, ...semCpf } = validBody;
+
+      const { errors } = await validateBody(semCpf);
+
+      expect(errors).toHaveLength(1);
+      expect(errors[0].property).toBe('cpf');
+      expect(Object.values(errors[0].constraints ?? {})).toEqual([
+        'CPF inválido',
+      ]);
+    });
   });
 });
