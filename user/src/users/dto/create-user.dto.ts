@@ -1,6 +1,6 @@
 import { IsEmail, IsNotEmpty, IsString, Length } from 'class-validator';
-import { IsCPF } from 'brazilian-class-validator';
 import { Transform } from 'class-transformer';
+import { IsCpf } from '../../common/validators/is-cpf.validator';
 
 export class CreateUserDto {
   @IsString()
@@ -16,6 +16,6 @@ export class CreateUserDto {
 
   // remove a máscara do CPF (pontos e traço) antes da validação
   @Transform(({ value }: { value: string }) => value.replace(/\D/g, ''))
-  @IsCPF({ message: 'CPF inválido' })
+  @IsCpf({ message: 'CPF inválido' })
   cpf!: string;
 }
