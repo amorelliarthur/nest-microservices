@@ -227,7 +227,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version-file: gateway/.nvmrc
           cache: 'npm'
           cache-dependency-path: gateway/package-lock.json
 
