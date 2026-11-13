@@ -33,7 +33,10 @@ export function IsCpf(validationOptions?: ValidationOptions) {
       name: 'isCpf',
       target: object.constructor,
       propertyName,
-      options: { message: 'CPF inválido', ...validationOptions },
+      options: {
+        ...validationOptions,
+        message: validationOptions?.message ?? 'CPF inválido',
+      },
       validator: {
         validate: (value: unknown) => isCpf(value),
       },

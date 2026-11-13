@@ -69,4 +69,15 @@ describe('IsCpf', () => {
 
     expect(errors[0].constraints).toEqual({ isCpf: 'CPF inválido' });
   });
+
+  it('deve manter a mensagem padrão quando a opção message vem undefined', async () => {
+    class MensagemUndefined {
+      @IsCpf({ message: undefined })
+      cpf = '11111111111';
+    }
+
+    const errors = await validate(new MensagemUndefined());
+
+    expect(errors[0].constraints).toEqual({ isCpf: 'CPF inválido' });
+  });
 });
