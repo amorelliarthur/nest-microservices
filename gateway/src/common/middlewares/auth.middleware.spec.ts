@@ -133,7 +133,7 @@ describe('AuthMiddleware', () => {
       expect(httpService.post).not.toHaveBeenCalled();
     });
 
-    it('deve usar x-forwarded-for como identificador de IP quando presente', async () => {
+    it('deve ignorar o x-forwarded-for enviado pelo cliente e usar o IP da conexão', async () => {
       const req = buildRequest({
         url: '/auth/login',
         method: 'POST',
@@ -145,8 +145,33 @@ describe('AuthMiddleware', () => {
       await middleware.use(req, res, next);
 
       expect(redisService.increment).toHaveBeenCalledWith(
-        'rate_limit:203.0.113.5',
+        'rate_limit:127.0.0.1',
       );
+    });
+
+    it('deve contar no mesmo contador requisições com x-forwarded-for forjados diferentes', async () => {
+      const res = buildResponse();
+      const next = jest.fn();
+
+      for (const forged of [
+        '203.0.113.5',
+        '198.51.100.7',
+        '10.0.0.1, 1.2.3.4',
+      ]) {
+        const req = buildRequest({
+          url: '/auth/login',
+          method: 'POST',
+          headers: { 'x-forwarded-for': forged },
+        });
+        await middleware.use(req, res, next);
+      }
+
+      const keys = redisService.increment.mock.calls.map(([key]) => key);
+      expect(keys).toEqual([
+        'rate_limit:127.0.0.1',
+        'rate_limit:127.0.0.1',
+        'rate_limit:127.0.0.1',
+      ]);
     });
   });
 

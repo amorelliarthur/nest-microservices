@@ -89,11 +89,8 @@ export class AuthMiddleware implements NestMiddleware {
     // console.log(`[AuthMiddleware] ${req.method} ${req.url}`);
     this.stripInternalHeaders(req);
 
-    // rate limit
-    const ip =
-      (req.headers['x-forwarded-for'] as string) ??
-      req.socket.remoteAddress ??
-      'unknown';
+    // rate limit pelo IP da conexão: o x-forwarded-for vem do cliente e pode ser forjado
+    const ip = req.socket.remoteAddress ?? 'unknown';
     const key = `rate_limit:${ip}`;
     const requests = await this.redisService.increment(key);
 
