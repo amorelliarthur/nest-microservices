@@ -1,6 +1,6 @@
 # Nest Microservices
 
-![Node](https://img.shields.io/badge/node-20%20%7C%2024-green)
+![Node](https://img.shields.io/badge/node-24-green)
 ![NestJS](https://img.shields.io/badge/nestjs-11-red)
 ![Architecture](https://img.shields.io/badge/architecture-microservices-orange)
 ![Redis](https://img.shields.io/badge/redis-enabled-red)
@@ -532,8 +532,6 @@ INTERNAL_JWT_PUBLIC_KEY_B64=<chave-publica-gerada-pelo-script>
 
 ### AI Service
 
-Requer **Node.js >= 24.9** (veja `ai-service/.nvmrc`).
-
 ```env
 PORT=3006
 GEMINI_API_KEY=<sua-chave-do-google-ai-studio>
@@ -553,6 +551,8 @@ As chaves do token interno e o segredo do gateway são gerados como explicado em
 ---
 
 # Instalação
+
+Todos os serviços requerem **Node.js >= 24.9**. Cada pasta traz um `.nvmrc`, então `nvm use` dentro dela seleciona a versão certa, a mesma que o CI usa.
 
 Clone o repositório:
 

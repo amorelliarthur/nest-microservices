@@ -34,7 +34,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version-file: auth/.nvmrc
           cache: 'npm'
           cache-dependency-path: auth/package-lock.json
 
@@ -96,7 +96,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version-file: user/.nvmrc
           cache: 'npm'
           cache-dependency-path: user/package-lock.json
 
@@ -166,7 +166,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version-file: financial/.nvmrc
           cache: 'npm'
           cache-dependency-path: financial/package-lock.json
 
@@ -227,7 +227,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version-file: gateway/.nvmrc
           cache: 'npm'
           cache-dependency-path: gateway/package-lock.json
 
