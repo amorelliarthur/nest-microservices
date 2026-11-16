@@ -1,11 +1,17 @@
-import { Logger } from '@nestjs/common';
+import { Logger, LogLevel } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import type { Request, Response, NextFunction } from 'express';
 import { AppModule } from './app.module';
 import { AuthMiddleware } from './common/middlewares/auth.middleware';
 
 async function bootstrap() {
+  // debug e verbose só em desenvolvimento
+  const logLevels: LogLevel[] =
+    process.env.NODE_ENV === 'dev'
+      ? ['fatal', 'error', 'warn', 'log', 'debug', 'verbose']
+      : ['fatal', 'error', 'warn', 'log'];
   const app = await NestFactory.create(AppModule, {
+    logger: logLevels,
     bodyParser: false, // desabilita para o proxy funcionar corretamente
   });
 

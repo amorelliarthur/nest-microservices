@@ -1,11 +1,16 @@
 import { NestFactory } from '@nestjs/core';
-import { Logger, ValidationPipe } from '@nestjs/common';
+import { Logger, LogLevel, ValidationPipe } from '@nestjs/common';
 import { Transport, MicroserviceOptions } from '@nestjs/microservices';
 import { AppModule } from './app.module';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // debug e verbose só em desenvolvimento
+  const logLevels: LogLevel[] =
+    process.env.NODE_ENV === 'dev'
+      ? ['fatal', 'error', 'warn', 'log', 'debug', 'verbose']
+      : ['fatal', 'error', 'warn', 'log'];
+  const app = await NestFactory.create(AppModule, { logger: logLevels });
 
   // conecta ao RabbitMQ como consumidor
   app.connectMicroservice<MicroserviceOptions>({
