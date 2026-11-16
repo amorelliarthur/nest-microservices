@@ -1,5 +1,5 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 
@@ -10,6 +10,8 @@ async function bootstrap() {
 
   const port = process.env.PORTA || 3001;
   await app.listen(port);
-  console.log(`[${process.env.APP_NAME}] running on port ${port}`);
+  new Logger('Bootstrap').log(
+    `${process.env.APP_NAME} running on port ${port}`,
+  );
 }
 void bootstrap();
