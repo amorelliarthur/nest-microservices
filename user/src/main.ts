@@ -1,5 +1,5 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { Transport, MicroserviceOptions } from '@nestjs/microservices';
 import { AppModule } from './app.module';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
@@ -23,10 +23,12 @@ async function bootstrap() {
 
   // inicia HTTP e microservice juntos
   await app.startAllMicroservices();
-  console.log('[RabbitMQ] microservice consumer iniciado');
+  new Logger('Bootstrap').log('RabbitMQ consumer started');
 
   const port = process.env.PORTA || 3000;
   await app.listen(port);
-  console.log(`[${process.env.APP_NAME}] running on port ${port}`);
+  new Logger('Bootstrap').log(
+    `${process.env.APP_NAME} running on port ${port}`,
+  );
 }
 void bootstrap();

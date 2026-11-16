@@ -1,6 +1,7 @@
 import {
   Injectable,
   ConflictException,
+  Logger,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -22,6 +23,8 @@ interface UserFilter {
 
 @Injectable()
 export class UsersService {
+  private readonly logger = new Logger(UsersService.name);
+
   constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     private readonly redisService: RedisService,
@@ -82,12 +85,12 @@ export class UsersService {
     // tenta buscar do cache primeiro
     const cached = await this.redisService.get(cacheKey);
     if (cached) {
-      console.log(`[Cache] HIT user:${id}`);
+      this.logger.debug(`Cache HIT user:${id}`);
       return JSON.parse(cached) as UserDocument;
     }
 
     // se não tem cache, busca no MongoDB
-    console.log(`[Cache] MISS user:${id}`);
+    this.logger.debug(`Cache MISS user:${id}`);
     const user = await this.userModel.findOne({ _id: id, deletedAt: null });
     if (!user) throw new NotFoundException('Usuário não encontrado');
 
@@ -132,7 +135,7 @@ export class UsersService {
 
     // invalida o cache — dados foram alterados
     await this.redisService.del(`user:${id}`);
-    console.log(`[Cache] INVALIDATED user:${id}`);
+    this.logger.debug(`Cache INVALIDATED user:${id}`);
     return user;
   }
 
@@ -148,6 +151,6 @@ export class UsersService {
 
     // invalida o cache — usuário foi deletado
     await this.redisService.del(`user:${id}`);
-    console.log(`[Cache] INVALIDATED user:${id}`);
+    this.logger.debug(`Cache INVALIDATED user:${id}`);
   }
 }
