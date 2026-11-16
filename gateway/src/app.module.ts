@@ -76,7 +76,7 @@ export class AppModule implements NestModule {
 
     for (const { path, target, rewrite } of proxies) {
       if (!target) {
-        new Logger('Gateway').warn(
+        new Logger(AppModule.name).warn(
           `Missing environment variable for route ${path}, proxy skipped`,
         );
         continue;
