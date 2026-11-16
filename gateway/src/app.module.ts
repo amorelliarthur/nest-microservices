@@ -2,6 +2,7 @@ import * as dotenv from 'dotenv';
 dotenv.config(); // carrega o .env antes de qualquer coisa
 
 import {
+  Logger,
   MiddlewareConsumer,
   Module,
   NestModule,
@@ -75,8 +76,8 @@ export class AppModule implements NestModule {
 
     for (const { path, target, rewrite } of proxies) {
       if (!target) {
-        console.warn(
-          `[Gateway] Variável de ambiente ausente para rota ${path} — proxy ignorado`,
+        new Logger('Gateway').warn(
+          `Missing environment variable for route ${path}, proxy skipped`,
         );
         continue;
       }
