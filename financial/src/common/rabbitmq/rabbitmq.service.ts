@@ -9,6 +9,7 @@ import {
   ClientProxyFactory,
   Transport,
 } from '@nestjs/microservices';
+import { lastValueFrom } from 'rxjs';
 
 @Injectable()
 export class RabbitMQService implements OnModuleInit, OnModuleDestroy {
@@ -27,10 +28,11 @@ export class RabbitMQService implements OnModuleInit, OnModuleDestroy {
   }
 
   async publish(pattern: string, data: unknown): Promise<void> {
-    await Promise.resolve();
-
     try {
-      this.client.emit(pattern, data);
+      // o emit devolve um Observable: as falhas só aparecem ao esperar por ele
+      await lastValueFrom(this.client.emit(pattern, data), {
+        defaultValue: undefined,
+      });
       this.logger.log(`Event published: ${pattern}`);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'unknown error';
