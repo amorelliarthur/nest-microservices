@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   BadRequestException,
   ForbiddenException,
@@ -21,6 +22,8 @@ import type { Requester } from '../common/auth/requester';
 
 @Injectable()
 export class TransactionsService {
+  private readonly logger = new Logger(TransactionsService.name);
+
   constructor(
     @InjectRepository(Transaction)
     private readonly transactionRepo: Repository<Transaction>,
@@ -53,7 +56,7 @@ export class TransactionsService {
     }
 
     const jobId = await this.queueService.enqueueTransaction(dto);
-    console.log(`[Queue] transação enfileirada — job ${jobId}`);
+    this.logger.log(`Transaction enqueued as job ${jobId}`);
     return { jobId, status: TransactionStatus.PENDING };
   }
 

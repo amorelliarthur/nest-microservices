@@ -1,4 +1,4 @@
-import { Controller } from '@nestjs/common';
+import { Controller, Logger } from '@nestjs/common';
 import { EventPattern, Payload } from '@nestjs/microservices';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -6,6 +6,8 @@ import { User, UserDocument } from '../../users/schemas/user.schema';
 
 @Controller()
 export class TransactionConsumer {
+  private readonly logger = new Logger(TransactionConsumer.name);
+
   constructor(
     @InjectModel(User.name)
     private readonly userModel: Model<UserDocument>,
@@ -21,8 +23,8 @@ export class TransactionConsumer {
       amount: number;
     },
   ) {
-    console.log(
-      `[RabbitMQ] evento recebido — userId: ${data.userId} | tipo: ${data.type}`,
+    this.logger.log(
+      `transaction.completed received for user ${data.userId} (${data.type})`,
     );
 
     // atualiza lastTransactionAt do usuário
@@ -30,8 +32,6 @@ export class TransactionConsumer {
       lastTransactionAt: new Date(),
     });
 
-    console.log(
-      `[RabbitMQ] lastTransactionAt atualizado para userId: ${data.userId}`,
-    );
+    this.logger.log(`lastTransactionAt updated for user ${data.userId}`);
   }
 }

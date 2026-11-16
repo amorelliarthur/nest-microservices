@@ -1,9 +1,10 @@
-import { Injectable, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import Redis from 'ioredis';
 
 @Injectable()
 export class RedisService implements OnModuleDestroy {
   private readonly client: Redis;
+  private readonly logger = new Logger(RedisService.name);
 
   constructor() {
     this.client = new Redis({
@@ -11,8 +12,10 @@ export class RedisService implements OnModuleDestroy {
       port: Number(process.env.REDIS_PORT) || 6379,
     });
 
-    this.client.on('connect', () => console.log('[Redis] conectado'));
-    this.client.on('error', (err) => console.error('[Redis] erro:', err));
+    this.client.on('connect', () => this.logger.log('Connected to Redis'));
+    this.client.on('error', (err) =>
+      this.logger.error(`Redis error: ${err.message}`, err.stack),
+    );
   }
 
   // adiciona token na blacklist com TTL em segundos

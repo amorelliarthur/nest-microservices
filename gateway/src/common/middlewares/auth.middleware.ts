@@ -86,7 +86,6 @@ export class AuthMiddleware implements NestMiddleware {
   ) {}
 
   async use(req: RequestWithUser, res: Response, next: NextFunction) {
-    // console.log(`[AuthMiddleware] ${req.method} ${req.url}`);
     this.stripInternalHeaders(req);
 
     // rate limit pelo IP da conexão: o x-forwarded-for vem do cliente e pode ser forjado
