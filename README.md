@@ -23,6 +23,7 @@ Arquitetura de microserviços em NestJS com gerenciamento de usuários, serviço
 - Comunicação entre serviços via HTTP e eventos assíncronos (RabbitMQ)
 - Validação de dados com class-validator e Zod (ai-service)
 - Logging de requisições HTTP
+- Logs padronizados com o `Logger` do NestJS em todos os serviços (níveis `log`, `warn`, `error` e `debug`, com o contexto da classe)
 - Persistência com MongoDB (Mongoose) e PostgreSQL (TypeORM)
 - Migrations com TypeORM
 - Redis para cache, sessão, rate limiting e filas assíncronas
