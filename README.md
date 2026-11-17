@@ -22,7 +22,7 @@ Arquitetura de microserviços em NestJS com gerenciamento de usuários, serviço
 - Autorização por níveis (USER / ADMIN)
 - Comunicação entre serviços via HTTP e eventos assíncronos (RabbitMQ)
 - Validação de dados com class-validator e Zod (ai-service)
-- Logging de requisições HTTP: em dev, detalhado no console (headers fora da allowlist como `[REDACTED]` e campos sensíveis do body mascarados em qualquer profundidade, inclusive dentro de arrays); fora de dev, só uma linha por requisição no stdout (método, caminho sem a query string, status e duração), sem escrita em disco, com a coleta dos logs a cargo da infraestrutura. Um campo do body é sensível quando o nome contém `senha`, `password`, `token`, `authorization`, `cookie` ou `cpf`
+- Logging de requisições HTTP: em dev, detalhado no console (headers fora da allowlist como `[REDACTED]` e campos sensíveis do body mascarados em qualquer profundidade, inclusive dentro de arrays); fora de dev, só uma linha por requisição no stdout (método, caminho sem a query string, status e duração), sem escrita em disco, com a coleta dos logs a cargo da infraestrutura. Um campo do body é sensível quando o nome contém `senha`, `password`, `token`, `authorization`, `cookie`, `cpf`, `secret`, `apikey` ou `api_key`
 - Logs padronizados com o `Logger` do NestJS em todos os serviços (níveis `log`, `warn`, `error` e `debug`, com o contexto da classe); `debug` e `verbose` só aparecem com `NODE_ENV=dev`
 - Persistência com MongoDB (Mongoose) e PostgreSQL (TypeORM)
 - Migrations com TypeORM

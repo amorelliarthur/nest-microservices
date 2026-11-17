@@ -185,6 +185,23 @@ describe('LoggingInterceptor', () => {
       expect(text).toContain('"descricao": "Almoço"');
     });
 
+    it('deve mascarar segredos e chaves de API', async () => {
+      await run(new LoggingInterceptor(), {
+        body: {
+          clientSecret: 'client-secret-123',
+          apiKey: 'api-key-camel-123',
+          api_key: 'api-key-snake-123',
+          descricao: 'Almoço',
+        },
+      });
+
+      const text = loggedText();
+      expect(text).not.toContain('client-secret-123');
+      expect(text).not.toContain('api-key-camel-123');
+      expect(text).not.toContain('api-key-snake-123');
+      expect(text).toContain('"descricao": "Almoço"');
+    });
+
     it('deve mascarar por inteiro o valor objeto de uma chave sensível', async () => {
       await run(new LoggingInterceptor(), {
         body: { senhas: { atual: 'SenhaAtual@1', nova: 'SenhaNova@1' } },

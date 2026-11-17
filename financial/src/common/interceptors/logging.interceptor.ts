@@ -45,6 +45,9 @@ const SENSITIVE_TERMS = [
   'authorization',
   'cookie',
   'cpf',
+  'secret',
+  'apikey',
+  'api_key',
 ];
 
 const MASK = '******';
