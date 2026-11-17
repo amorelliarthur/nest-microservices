@@ -184,6 +184,12 @@ describe('LoggingInterceptor', () => {
       expect(text).not.toContain('Bearer abc');
       expect(text).toContain('"descricao": "Almoço"');
     });
+
+    it('deve manter a query string na URL para facilitar a depuração', async () => {
+      await run(new LoggingInterceptor(), { url: '/recurso?nome=Arthur' });
+
+      expect(loggedText()).toContain('POST /recurso?nome=Arthur 200');
+    });
   });
 
   describe('em produção (só stdout)', () => {
@@ -204,6 +210,19 @@ describe('LoggingInterceptor', () => {
       expect(logSpy).toHaveBeenCalledWith(
         expect.stringMatching(/^POST \/accounts\/me 200 - \d+ms$/),
       );
+    });
+
+    it('deve registrar só o caminho, sem a query string', async () => {
+      await run(new LoggingInterceptor(), {
+        url: '/recurso?nome=Arthur%20Teste&email=user%40test.com',
+      });
+
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringMatching(/^POST \/recurso 200 - \d+ms$/),
+      );
+      const text = loggedText();
+      expect(text).not.toContain('Arthur');
+      expect(text).not.toContain('user%40test.com');
     });
 
     it('não deve registrar headers, body nem segredos', async () => {

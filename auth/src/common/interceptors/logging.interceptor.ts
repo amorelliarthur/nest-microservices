@@ -94,8 +94,10 @@ export class LoggingInterceptor implements NestInterceptor {
               `Body: ${JSON.stringify(this.maskSensitive(body), null, 2)}`,
           );
         } else {
-          // Prod: só a linha resumida no stdout; a coleta fica com a infraestrutura
-          this.logger.log(`${method} ${url} ${status} - ${duration}ms`);
+          // Prod: só a linha resumida no stdout; a coleta fica com a infraestrutura.
+          // A query string fica de fora porque pode levar dados pessoais (?nome=).
+          const pathOnly = url.split('?', 1)[0];
+          this.logger.log(`${method} ${pathOnly} ${status} - ${duration}ms`);
         }
       }),
     );
