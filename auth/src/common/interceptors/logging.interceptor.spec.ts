@@ -185,6 +185,29 @@ describe('LoggingInterceptor', () => {
       expect(text).toContain('"descricao": "Almoço"');
     });
 
+    it('deve mascarar por inteiro o valor objeto de uma chave sensível', async () => {
+      await run(new LoggingInterceptor(), {
+        body: { senhas: { atual: 'SenhaAtual@1', nova: 'SenhaNova@1' } },
+      });
+
+      const text = loggedText();
+      expect(text).not.toContain('SenhaAtual@1');
+      expect(text).not.toContain('SenhaNova@1');
+      expect(text).toContain('"senhas": "******"');
+    });
+
+    it.each([
+      ['null', null],
+      ['texto', 'senha-em-texto-puro'],
+      ['número', 42],
+    ])('deve registrar body vazio quando ele é %s', async (_label, body) => {
+      await run(new LoggingInterceptor(), { body });
+
+      const text = loggedText();
+      expect(text).toContain('Body: {}');
+      expect(text).not.toContain('senha-em-texto-puro');
+    });
+
     it('deve manter a query string na URL para facilitar a depuração', async () => {
       await run(new LoggingInterceptor(), { url: '/recurso?nome=Arthur' });
 
