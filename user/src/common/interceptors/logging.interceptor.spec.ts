@@ -4,10 +4,12 @@ import * as fs from 'fs';
 import { lastValueFrom, of } from 'rxjs';
 import { LoggingInterceptor } from './logging.interceptor';
 
-// o interceptor só usa fs.appendFileSync: o mock impede gravar app.log no disco
+// os mocks impedem gravar no disco e permitem provar que nada é gravado
 jest.mock('fs', () => ({
   ...jest.requireActual<typeof import('fs')>('fs'),
   appendFileSync: jest.fn(),
+  appendFile: jest.fn(),
+  createWriteStream: jest.fn(),
 }));
 
 const GATEWAY_SECRET = 'segredo-do-gateway-que-nunca-vai-para-o-log';
@@ -64,12 +66,9 @@ describe('LoggingInterceptor', () => {
       .map((value) => String(value))
       .join('\n');
 
-  describe.each([
-    ['dev (console)', 'dev'],
-    ['prod (arquivo)', 'production'],
-  ])('em %s', (_label, env) => {
+  describe('em dev (console detalhado)', () => {
     beforeEach(() => {
-      process.env.NODE_ENV = env;
+      process.env.NODE_ENV = 'dev';
     });
 
     it('não deve registrar o segredo do gateway nem o token interno', async () => {
@@ -107,6 +106,41 @@ describe('LoggingInterceptor', () => {
       const text = loggedText();
       expect(text).not.toContain('Senha@123');
       expect(text).toContain('"email": "user@test.com"');
+    });
+  });
+
+  describe('em produção (só stdout)', () => {
+    beforeEach(() => {
+      process.env.NODE_ENV = 'production';
+    });
+
+    it('não deve gravar nada em disco', async () => {
+      await run(new LoggingInterceptor());
+
+      expect(appendSpy).not.toHaveBeenCalled();
+      expect(fs.appendFile).not.toHaveBeenCalled();
+      expect(fs.createWriteStream).not.toHaveBeenCalled();
+    });
+
+    it('deve registrar só a linha resumida da requisição', async () => {
+      await run(new LoggingInterceptor());
+
+      expect(logSpy).toHaveBeenCalledTimes(1);
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringMatching(/^POST \/user\/me 200 - \d+ms$/),
+      );
+    });
+
+    it('não deve registrar headers, body nem segredos', async () => {
+      await run(new LoggingInterceptor());
+
+      const text = loggedText();
+      expect(text).not.toContain('Headers:');
+      expect(text).not.toContain('Body:');
+      expect(text).not.toContain(GATEWAY_SECRET);
+      expect(text).not.toContain(INTERNAL_TOKEN);
+      expect(text).not.toContain(CLIENT_TOKEN);
+      expect(text).not.toContain('Senha@123');
     });
   });
 });

@@ -7,8 +7,6 @@ import {
 } from '@nestjs/common';
 import { Observable, tap } from 'rxjs';
 import type { Request, Response } from 'express';
-import * as fs from 'fs';
-import * as path from 'path';
 
 type LoggableData = Record<string, unknown> | undefined;
 
@@ -65,11 +63,8 @@ export class LoggingInterceptor implements NestInterceptor {
               `Body: ${JSON.stringify(this.maskSensitive(body), null, 2)}`,
           );
         } else {
-          // Prod: simplificado no console
+          // Prod: só a linha resumida no stdout; a coleta fica com a infraestrutura
           this.logger.log(`${method} ${url} ${status} - ${duration}ms`);
-
-          // Prod: detalhado em arquivo
-          this.writeToFile(method, url, status, duration, headers, body);
         }
       }),
     );
@@ -88,23 +83,5 @@ export class LoggingInterceptor implements NestInterceptor {
       }
     }
     return masked;
-  }
-
-  private writeToFile(
-    method: string,
-    url: string,
-    status: number,
-    duration: number,
-    headers: LoggableData,
-    body: LoggableData,
-  ) {
-    const logPath = path.join(process.cwd(), 'app.log');
-    const entry =
-      `${new Date().toISOString()} ${method} ${url} ${status} - ${duration}ms\n` +
-      `Headers: ${JSON.stringify(redactHeaders(headers), null, 2)}\n` +
-      `Body: ${JSON.stringify(this.maskSensitive(body), null, 2)}\n` +
-      `${'─'.repeat(60)}\n`;
-
-    fs.appendFileSync(logPath, entry);
   }
 }
