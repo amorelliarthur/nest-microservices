@@ -71,8 +71,11 @@ const buildRequest = () => ({
   body: { email: 'user@test.com', senha: 'Senha@123' },
 });
 
-const run = async (interceptor: LoggingInterceptor) => {
-  const req = buildRequest();
+const run = async (
+  interceptor: LoggingInterceptor,
+  overrides: { url?: string; body?: unknown } = {},
+) => {
+  const req = { ...buildRequest(), ...overrides };
   const context = {
     switchToHttp: () => ({
       getRequest: () => req,
@@ -144,6 +147,42 @@ describe('LoggingInterceptor', () => {
       const text = loggedText();
       expect(text).not.toContain('Senha@123');
       expect(text).toContain('"email": "user@test.com"');
+    });
+
+    it('deve mascarar campos sensíveis em objetos aninhados e em arrays', async () => {
+      await run(new LoggingInterceptor(), {
+        body: {
+          dados: { senha: 'SenhaAninhada@1', perfil: { cpf: '52998224725' } },
+          contas: [{ token: 'token-dentro-de-array' }],
+          tags: ['mercado', 'mensal'],
+        },
+      });
+
+      const text = loggedText();
+      expect(text).not.toContain('SenhaAninhada@1');
+      expect(text).not.toContain('52998224725');
+      expect(text).not.toContain('token-dentro-de-array');
+      // o que não é sensível continua aparecendo
+      expect(text).toContain('"mercado"');
+    });
+
+    it('deve mascarar campos cujo nome contém um termo sensível', async () => {
+      await run(new LoggingInterceptor(), {
+        body: {
+          novaSenha: 'NovaSenha@1',
+          password: 'Password@1',
+          refreshToken: 'refresh-token-secreto',
+          Authorization: 'Bearer abc',
+          descricao: 'Almoço',
+        },
+      });
+
+      const text = loggedText();
+      expect(text).not.toContain('NovaSenha@1');
+      expect(text).not.toContain('Password@1');
+      expect(text).not.toContain('refresh-token-secreto');
+      expect(text).not.toContain('Bearer abc');
+      expect(text).toContain('"descricao": "Almoço"');
     });
   });
 

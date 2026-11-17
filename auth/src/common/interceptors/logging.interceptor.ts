@@ -36,6 +36,37 @@ const redactHeaders = (headers: LoggableData): Record<string, unknown> => {
   );
 };
 
+// Um campo é sensível quando o nome CONTÉM um destes termos (sem diferenciar
+// maiúsculas): assim `novaSenha` e `refreshToken` já nascem protegidos.
+const SENSITIVE_TERMS = [
+  'senha',
+  'password',
+  'token',
+  'authorization',
+  'cookie',
+  'cpf',
+];
+
+const MASK = '******';
+
+const isSensitiveKey = (key: string): boolean => {
+  const name = key.toLowerCase();
+  return SENSITIVE_TERMS.some((term) => name.includes(term));
+};
+
+// Percorre objetos e arrays em qualquer profundidade
+const maskBody = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(maskBody);
+  if (!value || typeof value !== 'object') return value;
+
+  return Object.fromEntries(
+    Object.entries(value).map(([key, nested]) => [
+      key,
+      isSensitiveKey(key) ? MASK : maskBody(nested),
+    ]),
+  );
+};
+
 @Injectable()
 export class LoggingInterceptor implements NestInterceptor {
   private readonly logger = new Logger('HTTP');
@@ -74,14 +105,6 @@ export class LoggingInterceptor implements NestInterceptor {
   private maskSensitive(data: LoggableData): Record<string, unknown> {
     if (!data || typeof data !== 'object') return {};
 
-    const sensitive = ['senha', 'token', 'authorization', 'cookie', 'cpf'];
-    const masked: Record<string, unknown> = { ...data };
-
-    for (const key of Object.keys(masked)) {
-      if (sensitive.includes(key.toLowerCase())) {
-        masked[key] = '******';
-      }
-    }
-    return masked;
+    return maskBody(data) as Record<string, unknown>;
   }
 }
