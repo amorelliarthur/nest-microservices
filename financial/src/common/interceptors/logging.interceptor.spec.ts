@@ -71,8 +71,11 @@ const buildRequest = () => ({
   body: { email: 'user@test.com', senha: 'Senha@123' },
 });
 
-const run = async (interceptor: LoggingInterceptor) => {
-  const req = buildRequest();
+const run = async (
+  interceptor: LoggingInterceptor,
+  overrides: { url?: string; body?: unknown } = {},
+) => {
+  const req = { ...buildRequest(), ...overrides };
   const context = {
     switchToHttp: () => ({
       getRequest: () => req,
@@ -145,6 +148,88 @@ describe('LoggingInterceptor', () => {
       expect(text).not.toContain('Senha@123');
       expect(text).toContain('"email": "user@test.com"');
     });
+
+    it('deve mascarar campos sensíveis em objetos aninhados e em arrays', async () => {
+      await run(new LoggingInterceptor(), {
+        body: {
+          dados: { senha: 'SenhaAninhada@1', perfil: { cpf: '52998224725' } },
+          contas: [{ token: 'token-dentro-de-array' }],
+          tags: ['mercado', 'mensal'],
+        },
+      });
+
+      const text = loggedText();
+      expect(text).not.toContain('SenhaAninhada@1');
+      expect(text).not.toContain('52998224725');
+      expect(text).not.toContain('token-dentro-de-array');
+      // o que não é sensível continua aparecendo
+      expect(text).toContain('"mercado"');
+    });
+
+    it('deve mascarar campos cujo nome contém um termo sensível', async () => {
+      await run(new LoggingInterceptor(), {
+        body: {
+          novaSenha: 'NovaSenha@1',
+          password: 'Password@1',
+          refreshToken: 'refresh-token-secreto',
+          Authorization: 'Bearer abc',
+          descricao: 'Almoço',
+        },
+      });
+
+      const text = loggedText();
+      expect(text).not.toContain('NovaSenha@1');
+      expect(text).not.toContain('Password@1');
+      expect(text).not.toContain('refresh-token-secreto');
+      expect(text).not.toContain('Bearer abc');
+      expect(text).toContain('"descricao": "Almoço"');
+    });
+
+    it('deve mascarar segredos e chaves de API', async () => {
+      await run(new LoggingInterceptor(), {
+        body: {
+          clientSecret: 'client-secret-123',
+          apiKey: 'api-key-camel-123',
+          api_key: 'api-key-snake-123',
+          descricao: 'Almoço',
+        },
+      });
+
+      const text = loggedText();
+      expect(text).not.toContain('client-secret-123');
+      expect(text).not.toContain('api-key-camel-123');
+      expect(text).not.toContain('api-key-snake-123');
+      expect(text).toContain('"descricao": "Almoço"');
+    });
+
+    it('deve mascarar por inteiro o valor objeto de uma chave sensível', async () => {
+      await run(new LoggingInterceptor(), {
+        body: { senhas: { atual: 'SenhaAtual@1', nova: 'SenhaNova@1' } },
+      });
+
+      const text = loggedText();
+      expect(text).not.toContain('SenhaAtual@1');
+      expect(text).not.toContain('SenhaNova@1');
+      expect(text).toContain('"senhas": "******"');
+    });
+
+    it.each([
+      ['null', null],
+      ['texto', 'senha-em-texto-puro'],
+      ['número', 42],
+    ])('deve registrar body vazio quando ele é %s', async (_label, body) => {
+      await run(new LoggingInterceptor(), { body });
+
+      const text = loggedText();
+      expect(text).toContain('Body: {}');
+      expect(text).not.toContain('senha-em-texto-puro');
+    });
+
+    it('deve manter a query string na URL para facilitar a depuração', async () => {
+      await run(new LoggingInterceptor(), { url: '/recurso?nome=Arthur' });
+
+      expect(loggedText()).toContain('POST /recurso?nome=Arthur 200');
+    });
   });
 
   describe('em produção (só stdout)', () => {
@@ -165,6 +250,19 @@ describe('LoggingInterceptor', () => {
       expect(logSpy).toHaveBeenCalledWith(
         expect.stringMatching(/^POST \/accounts\/me 200 - \d+ms$/),
       );
+    });
+
+    it('deve registrar só o caminho, sem a query string', async () => {
+      await run(new LoggingInterceptor(), {
+        url: '/recurso?nome=Arthur%20Teste&email=user%40test.com',
+      });
+
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringMatching(/^POST \/recurso 200 - \d+ms$/),
+      );
+      const text = loggedText();
+      expect(text).not.toContain('Arthur');
+      expect(text).not.toContain('user%40test.com');
     });
 
     it('não deve registrar headers, body nem segredos', async () => {
