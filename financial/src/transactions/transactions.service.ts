@@ -15,13 +15,11 @@ import {
 import { Account } from '../accounts/entities/account.entity';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { QueueService } from '../common/queue/queue.service';
+import { GENERIC_FAILURE_REASON } from '../common/queue/job-error';
 import { RabbitMQService } from '../common/rabbitmq/rabbitmq.service';
 import { assertAccountAccess } from '../accounts/account-access';
 import { canAccess } from '../common/auth/requester';
 import type { Requester } from '../common/auth/requester';
-
-// Mensagem exibida ao usuário quando a falha não é uma regra de negócio
-export const GENERIC_FAILURE_REASON = 'Não foi possível processar a transação';
 
 @Injectable()
 export class TransactionsService {
