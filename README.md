@@ -406,7 +406,7 @@ GET /transactions/:id
 
 **Limitação conhecida:** se o banco estiver fora do ar justamente ao gravar o `FAILED` da última tentativa, a transação continua `PENDING` (a falha fica registrada no log como erro).
 
-**Deploy:** jobs enfileirados no formato antigo (com a transação inteira no job) não são processados. Esvazie a fila antes de subir esta versão.
+**Deploy:** aplique a migration antes de subir esta versão. Jobs enfileirados no formato antigo (com a transação inteira no job, sem `transactionId`) são recusados pelo worker sem tocar em nenhuma transação, e o pedido se perde: esvazie a fila antes do deploy.
 
 ---
 

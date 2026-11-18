@@ -286,6 +286,27 @@ describe('TransactionsService', () => {
     });
   });
 
+  describe('markFailed()', () => {
+    it('deve alterar somente a transação indicada, e só se ainda estiver PENDING', async () => {
+      await service.markFailed('tx-1', 'Saldo insuficiente');
+
+      expect(mockTransactionRepo.update).toHaveBeenCalledWith(
+        { id: 'tx-1', status: TransactionStatus.PENDING },
+        {
+          status: TransactionStatus.FAILED,
+          failureReason: 'Saldo insuficiente',
+        },
+      );
+    });
+
+    it('deve recusar um id vazio, que o TypeORM ignoraria no where', async () => {
+      await expect(
+        service.markFailed(undefined as unknown as string, 'x'),
+      ).rejects.toThrow();
+      expect(mockTransactionRepo.update).not.toHaveBeenCalled();
+    });
+  });
+
   describe('process()', () => {
     // A transação gravada como PENDING no create(): é ela que o worker processa
     const pendente = (dto: CreateTransactionDto) => ({
@@ -313,6 +334,13 @@ describe('TransactionsService', () => {
         Transaction,
         { where: { id: 'tx-1' }, lock: { mode: 'pessimistic_write' } },
       );
+    });
+
+    it('deve recusar um id vazio sem consultar o banco, que o TypeORM ignoraria no where', async () => {
+      await expect(
+        service.process(undefined as unknown as string),
+      ).rejects.toThrow();
+      expect(mockDataSource.createQueryRunner).not.toHaveBeenCalled();
     });
 
     it('deve lançar NotFoundException quando a transação não existe', async () => {

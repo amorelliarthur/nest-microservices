@@ -5,6 +5,7 @@ import {
   OnModuleDestroy,
 } from '@nestjs/common';
 import { Worker, Job, UnrecoverableError } from 'bullmq';
+import { isUUID } from 'class-validator';
 import { RedisService } from '../redis/redis.service';
 import { TransactionsService } from '../../transactions/transactions.service';
 import { TRANSACTION_QUEUE } from './queue.service';
@@ -26,6 +27,12 @@ export class TransactionWorker implements OnModuleInit, OnModuleDestroy {
       TRANSACTION_QUEUE,
       async (job: Job<TransactionJobData>) => {
         const { transactionId } = job.data;
+        // job no formato antigo ou forjado: recusado sem tocar em nenhuma transação
+        if (!isUUID(transactionId)) {
+          throw new UnrecoverableError(
+            'Invalid job payload: missing or invalid transactionId',
+          );
+        }
         this.logger.log(
           `Processing job ${job.id} (transaction ${transactionId})`,
         );

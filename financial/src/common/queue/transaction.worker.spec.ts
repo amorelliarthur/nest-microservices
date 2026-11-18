@@ -28,9 +28,14 @@ describe('TransactionWorker', () => {
     );
     worker.onModuleInit();
 
-    await processor({ id: '7', data: { transactionId: 'tx-1' } });
+    await processor({
+      id: '7',
+      data: { transactionId: '6f1c2b1e-8a4d-4f0e-9c3b-2d5e7a9b1c3d' },
+    });
 
-    expect(process).toHaveBeenCalledWith('tx-1');
+    expect(process).toHaveBeenCalledWith(
+      '6f1c2b1e-8a4d-4f0e-9c3b-2d5e7a9b1c3d',
+    );
   });
 
   it('deve registrar a falha de um job como erro no Logger', () => {
@@ -58,6 +63,37 @@ describe('TransactionWorker', () => {
     );
   });
 
+  it.each([
+    [
+      'sem transactionId (formato antigo)',
+      { accountId: 'acc-1', type: 'DEPOSIT', amount: 10 },
+    ],
+    ['com transactionId que não é UUID', { transactionId: 'abc' }],
+  ])(
+    'deve recusar um job %s sem processar nem marcar transações como FAILED',
+    async (_caso, data) => {
+      let processor!: (job: unknown) => Promise<void>;
+      (Worker as unknown as jest.Mock).mockImplementation(
+        (_queue: string, fn: (job: unknown) => Promise<void>) => {
+          processor = fn;
+          return { on: jest.fn(), close: jest.fn() };
+        },
+      );
+      jest.spyOn(Logger.prototype, 'log').mockImplementation();
+      const service = { process: jest.fn(), markFailed: jest.fn() };
+      new TransactionWorker(
+        { getConnectionOptions: () => ({}) } as unknown as RedisService,
+        service as unknown as TransactionsService,
+      ).onModuleInit();
+
+      await expect(
+        processor({ id: '7', data, attemptsMade: 0, opts: { attempts: 3 } }),
+      ).rejects.toBeInstanceOf(UnrecoverableError);
+      expect(service.process).not.toHaveBeenCalled();
+      expect(service.markFailed).not.toHaveBeenCalled();
+    },
+  );
+
   describe('quando o processamento falha', () => {
     const setup = () => {
       let processor!: (job: unknown) => Promise<void>;
@@ -76,7 +112,7 @@ describe('TransactionWorker', () => {
       ).onModuleInit();
       const job = (attemptsMade: number) => ({
         id: '7',
-        data: { transactionId: 'tx-1' },
+        data: { transactionId: '6f1c2b1e-8a4d-4f0e-9c3b-2d5e7a9b1c3d' },
         attemptsMade,
         opts: { attempts: 3 },
       });
@@ -93,7 +129,7 @@ describe('TransactionWorker', () => {
         UnrecoverableError,
       );
       expect(service.markFailed).toHaveBeenCalledWith(
-        'tx-1',
+        '6f1c2b1e-8a4d-4f0e-9c3b-2d5e7a9b1c3d',
         'Saldo insuficiente',
       );
     });
@@ -114,7 +150,7 @@ describe('TransactionWorker', () => {
 
       await expect(processor()(job(2))).rejects.toBe(falha);
       expect(service.markFailed).toHaveBeenCalledWith(
-        'tx-1',
+        '6f1c2b1e-8a4d-4f0e-9c3b-2d5e7a9b1c3d',
         'Não foi possível processar a transação',
       );
     });
@@ -131,7 +167,9 @@ describe('TransactionWorker', () => {
         UnrecoverableError,
       );
       expect(error).toHaveBeenCalledWith(
-        expect.stringMatching(/tx-1.*banco indisponível/),
+        expect.stringMatching(
+          /6f1c2b1e-8a4d-4f0e-9c3b-2d5e7a9b1c3d.*banco indisponível/,
+        ),
         falhaAoMarcar.stack,
       );
     });

@@ -84,6 +84,7 @@ export class TransactionsService {
 
   // Só altera transações ainda PENDING: nunca sobrescreve uma já concluída
   async markFailed(transactionId: string, reason: string): Promise<void> {
+    this.assertTransactionId(transactionId);
     await this.transactionRepo.update(
       { id: transactionId, status: TransactionStatus.PENDING },
       { status: TransactionStatus.FAILED, failureReason: reason },
@@ -92,6 +93,8 @@ export class TransactionsService {
 
   // chamado pelo worker em background, com a transação gravada no create()
   async process(transactionId: string): Promise<Transaction> {
+    this.assertTransactionId(transactionId);
+
     // queryRunner é o mecanismo de transação do TypeORM
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
@@ -290,6 +293,12 @@ export class TransactionsService {
       where: { id: accountId },
     });
     assertAccountAccess(account, requester);
+  }
+
+  // O TypeORM ignora `undefined` no where: sem esta checagem, um id vazio
+  // pegaria uma transação qualquer (ou todas as PENDING, no markFailed)
+  private assertTransactionId(transactionId: string): void {
+    if (!transactionId) throw new Error('transactionId is required');
   }
 
   // Transferir para a própria conta não é permitido: o débito seria sobrescrito pelo crédito
