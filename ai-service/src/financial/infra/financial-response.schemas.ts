@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-// Campos não listados (userId, active, status...) são descartados: só sai o que usamos
+// Campos não listados (userId, active, targetAccountId...) são descartados: só sai o que usamos
 export const accountResponseSchema = z.object({
   id: z.string(),
   type: z.enum(['CHECKING', 'SAVINGS']),
@@ -13,8 +13,9 @@ export const transactionResponseSchema = z.object({
   type: z.enum(['DEPOSIT', 'WITHDRAWAL', 'TRANSFER']),
   amount: z.coerce.number(),
   description: z.string().nullable(),
-  // validado para que um status novo no financial falhe alto, em vez de
-  // entrar silenciosamente nos totais; usado só para o filtro e descartado
+  // Usado só para o filtro de concluídas e descartado em seguida. É um enum
+  // para que um status novo (que talvez movimente dinheiro) falhe alto e
+  // apareça no log, em vez de sumir calado dos totais
   status: z.enum(['PENDING', 'COMPLETED', 'FAILED']),
   createdAt: z.coerce.date(),
 });

@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { z } from 'zod';
 import type { FinancialDataService } from '../../../financial/application/financial-data.service';
 import { AccountNotFoundError } from '../../../financial/domain/account-not-found.error';
@@ -9,6 +10,8 @@ import { ToolError } from './tool.error';
 
 export const MAX_TRANSACTIONS = 50;
 
+const logger = new Logger('FinancialTools');
+
 // Traduz erros do domínio financeiro em mensagens seguras para o modelo
 const safely = async <T>(operation: () => Promise<T>): Promise<T> => {
   try {
@@ -18,6 +21,8 @@ const safely = async <T>(operation: () => Promise<T>): Promise<T> => {
       throw new ToolError('Account not found');
     }
     if (error instanceof FinancialServiceError) {
+      // o modelo recebe só a mensagem genérica; a causa real fica no log
+      logger.error(error.message, error.stack);
       throw new ToolError('Financial service is unavailable. Try again later.');
     }
     throw error;

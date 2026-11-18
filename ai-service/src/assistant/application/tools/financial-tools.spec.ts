@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { FinancialDataService } from '../../../financial/application/financial-data.service';
 import type { FinancialClient } from '../../../financial/domain/financial-client.port';
 import { FinancialServiceError } from '../../../financial/domain/financial-service.error';
@@ -196,5 +197,24 @@ describe('financial tools', () => {
       ok: false,
       error: 'Financial service is unavailable. Try again later.',
     });
+  });
+
+  it('logs the real cause of a financial service failure as an error', async () => {
+    const error = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+    const failure = new FinancialServiceError(
+      'unexpected response: 0.status: Invalid option',
+    );
+    const failing: FinancialClient = {
+      listAccounts: () => Promise.reject(failure),
+      listTransactions: () => Promise.reject(failure),
+    };
+
+    await run(makeSut(failing), 'list_accounts');
+
+    expect(error).toHaveBeenCalledWith(
+      expect.stringContaining('unexpected response: 0.status: Invalid option'),
+      failure.stack,
+    );
+    error.mockRestore();
   });
 });
