@@ -43,16 +43,28 @@ export class HttpFinancialClient implements FinancialClient {
     );
   }
 
-  listTransactions(
+  async listTransactions(
     caller: Caller,
     accountId: string,
   ): Promise<FinancialTransaction[]> {
     // accountId vem do modelo: codificar impede que ele altere o caminho da URL
-    return this.get(
+    const transactions = await this.get(
       `/transactions/account/${encodeURIComponent(accountId)}`,
       caller,
       z.array(transactionResponseSchema),
     );
+    // Pendentes ainda podem falhar e as que falharam não movimentaram dinheiro:
+    // só as concluídas entram no extrato e nos totais do assistente
+    return transactions
+      .filter((transaction) => transaction.status === 'COMPLETED')
+      .map((transaction) => ({
+        id: transaction.id,
+        accountId: transaction.accountId,
+        type: transaction.type,
+        amount: transaction.amount,
+        description: transaction.description,
+        createdAt: transaction.createdAt,
+      }));
   }
 
   private async get<T>(

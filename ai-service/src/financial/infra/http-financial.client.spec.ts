@@ -77,6 +77,52 @@ describe('HttpFinancialClient', () => {
     ]);
   });
 
+  it('returns only completed transactions, dropping pending and failed ones', async () => {
+    const { client, fetchMock } = makeSut();
+    const transaction = (id: string, status: string) => ({
+      id,
+      accountId: 'acc-1',
+      type: 'WITHDRAWAL',
+      amount: '10.00',
+      description: null,
+      status,
+      createdAt: '2026-10-15T10:00:00.000Z',
+    });
+    fetchMock.mockResolvedValue(
+      jsonResponse([
+        transaction('pending', 'PENDING'),
+        transaction('completed', 'COMPLETED'),
+        transaction('failed', 'FAILED'),
+      ]),
+    );
+
+    const result = await client.listTransactions(caller, 'acc-1');
+
+    expect(result.map((t) => t.id)).toEqual(['completed']);
+    expect(result[0]).not.toHaveProperty('status');
+  });
+
+  it('throws FinancialServiceError when a transaction has an unknown status', async () => {
+    const { client, fetchMock } = makeSut();
+    fetchMock.mockResolvedValue(
+      jsonResponse([
+        {
+          id: 't1',
+          accountId: 'acc-1',
+          type: 'DEPOSIT',
+          amount: '10.00',
+          description: null,
+          status: 'REVERSED',
+          createdAt: '2026-10-15T10:00:00.000Z',
+        },
+      ]),
+    );
+
+    await expect(client.listTransactions(caller, 'acc-1')).rejects.toThrow(
+      FinancialServiceError,
+    );
+  });
+
   it('forwards the internal token, and never x-user-*, when listing transactions', async () => {
     const { client, fetchMock } = makeSut();
     fetchMock.mockResolvedValue(jsonResponse([]));
