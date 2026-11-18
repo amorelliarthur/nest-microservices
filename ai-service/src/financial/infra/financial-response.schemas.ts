@@ -13,5 +13,8 @@ export const transactionResponseSchema = z.object({
   type: z.enum(['DEPOSIT', 'WITHDRAWAL', 'TRANSFER']),
   amount: z.coerce.number(),
   description: z.string().nullable(),
+  // validado para que um status novo no financial falhe alto, em vez de
+  // entrar silenciosamente nos totais; usado só para o filtro e descartado
+  status: z.enum(['PENDING', 'COMPLETED', 'FAILED']),
   createdAt: z.coerce.date(),
 });
