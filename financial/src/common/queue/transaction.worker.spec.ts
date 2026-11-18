@@ -12,6 +12,27 @@ jest.mock('bullmq', () => ({
 describe('TransactionWorker', () => {
   afterEach(() => jest.restoreAllMocks());
 
+  it('deve processar a transação gravada pelo id que veio no job', async () => {
+    let processor!: (job: unknown) => Promise<void>;
+    (Worker as unknown as jest.Mock).mockImplementation(
+      (_queue: string, fn: (job: unknown) => Promise<void>) => {
+        processor = fn;
+        return { on: jest.fn(), close: jest.fn() };
+      },
+    );
+    jest.spyOn(Logger.prototype, 'log').mockImplementation();
+    const process = jest.fn().mockResolvedValue(undefined);
+    const worker = new TransactionWorker(
+      { getConnectionOptions: () => ({}) } as unknown as RedisService,
+      { process } as unknown as TransactionsService,
+    );
+    worker.onModuleInit();
+
+    await processor({ id: '7', data: { transactionId: 'tx-1' } });
+
+    expect(process).toHaveBeenCalledWith('tx-1');
+  });
+
   it('deve registrar a falha de um job como erro no Logger', () => {
     const handlers: Record<string, (...args: unknown[]) => void> = {};
     (Worker as unknown as jest.Mock).mockImplementation(() => ({

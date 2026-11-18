@@ -1,9 +1,13 @@
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import { Queue } from 'bullmq';
 import { RedisService } from '../redis/redis.service';
-import { CreateTransactionDto } from '../../transactions/dto/create-transaction.dto';
 
 export const TRANSACTION_QUEUE = 'transactions';
+
+// O job carrega só o id: os dados ficam na transação PENDING gravada no banco
+export interface TransactionJobData {
+  transactionId: string;
+}
 
 @Injectable()
 export class QueueService implements OnModuleDestroy {
@@ -15,8 +19,9 @@ export class QueueService implements OnModuleDestroy {
     });
   }
 
-  async enqueueTransaction(dto: CreateTransactionDto): Promise<string> {
-    const job = await this.queue.add('process-transaction', dto, {
+  async enqueueTransaction(transactionId: string): Promise<string> {
+    const data: TransactionJobData = { transactionId };
+    const job = await this.queue.add('process-transaction', data, {
       attempts: 3,
       backoff: { type: 'exponential', delay: 1000 },
     });

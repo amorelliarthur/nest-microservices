@@ -20,6 +20,9 @@ import { assertAccountAccess } from '../accounts/account-access';
 import { canAccess } from '../common/auth/requester';
 import type { Requester } from '../common/auth/requester';
 
+// Mensagem exibida ao usuário quando a falha não é uma regra de negócio
+export const GENERIC_FAILURE_REASON = 'Não foi possível processar a transação';
+
 @Injectable()
 export class TransactionsService {
   private readonly logger = new Logger(TransactionsService.name);
@@ -35,11 +38,11 @@ export class TransactionsService {
     private readonly rabbitMQService: RabbitMQService,
   ) {}
 
-  // enfileira e retorna imediatamente
+  // grava a transação como PENDING, enfileira e retorna imediatamente
   async create(
     dto: CreateTransactionDto,
     requester: Requester,
-  ): Promise<{ jobId: string; status: string }> {
+  ): Promise<{ transactionId: string; jobId: string; status: string }> {
     this.assertDistinctAccounts(dto);
 
     // valida se a conta origem existe e se o usuário logado pode movimentá-la
@@ -55,25 +58,77 @@ export class TransactionsService {
       );
     }
 
-    const jobId = await this.queueService.enqueueTransaction(dto);
-    this.logger.log(`Transaction enqueued as job ${jobId}`);
-    return { jobId, status: TransactionStatus.PENDING };
+    // gravada antes de enfileirar: o status pode ser consultado desde já e,
+    // se o processamento falhar, a transação continua registrada como FAILED
+    const transaction = await this.transactionRepo.save(
+      this.transactionRepo.create({
+        ...dto,
+        status: TransactionStatus.PENDING,
+      }),
+    );
+
+    let jobId: string;
+    try {
+      jobId = await this.queueService.enqueueTransaction(transaction.id);
+    } catch (err) {
+      // sem job, ninguém processaria a transação: ela não pode ficar PENDING
+      await this.markFailed(transaction.id, GENERIC_FAILURE_REASON);
+      throw err;
+    }
+
+    this.logger.log(`Transaction ${transaction.id} enqueued as job ${jobId}`);
+    return {
+      transactionId: transaction.id,
+      jobId,
+      status: TransactionStatus.PENDING,
+    };
   }
 
-  // chamado pelo worker em background
-  async process(dto: CreateTransactionDto): Promise<Transaction> {
-    this.assertDistinctAccounts(dto);
+  // Só altera transações ainda PENDING: nunca sobrescreve uma já concluída
+  async markFailed(transactionId: string, reason: string): Promise<void> {
+    await this.transactionRepo.update(
+      { id: transactionId, status: TransactionStatus.PENDING },
+      { status: TransactionStatus.FAILED, failureReason: reason },
+    );
+  }
 
+  // chamado pelo worker em background, com a transação gravada no create()
+  async process(transactionId: string): Promise<Transaction> {
     // queryRunner é o mecanismo de transação do TypeORM
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
 
     try {
+      // o lock impede que dois workers processem a mesma transação ao mesmo tempo
+      const transaction: Transaction | null = await queryRunner.manager.findOne(
+        Transaction,
+        {
+          where: { id: transactionId },
+          lock: { mode: 'pessimistic_write' },
+        },
+      );
+
+      if (!transaction) throw new NotFoundException('Transação não encontrada');
+
+      // job repetido (ex.: worker caiu depois do commit): não movimenta de novo
+      if (transaction.status !== TransactionStatus.PENDING) {
+        this.logger.warn(
+          `Transaction ${transactionId} is already ${transaction.status}, skipping`,
+        );
+        await queryRunner.commitTransaction();
+        return transaction;
+      }
+
+      this.assertDistinctAccounts(transaction);
+
+      // colunas decimal chegam do banco como texto
+      const amount = Number(transaction.amount);
+
       const account: Account | null = await queryRunner.manager.findOne(
         Account,
         {
-          where: { id: dto.accountId, active: true },
+          where: { id: transaction.accountId, active: true },
           // LOCK garante que nenhuma outra transação altere o saldo ao mesmo tempo
           lock: { mode: 'pessimistic_write' },
         },
@@ -81,37 +136,32 @@ export class TransactionsService {
 
       if (!account) throw new NotFoundException('Conta não encontrada');
 
-      const transaction = queryRunner.manager.create(Transaction, {
-        ...dto,
-        status: TransactionStatus.PENDING,
-      });
-
-      if (dto.type === TransactionType.DEPOSIT) {
-        account.balance = Number(account.balance) + Number(dto.amount);
+      if (transaction.type === TransactionType.DEPOSIT) {
+        account.balance = Number(account.balance) + amount;
       }
 
-      if (dto.type === TransactionType.WITHDRAWAL) {
-        if (Number(account.balance) < dto.amount) {
+      if (transaction.type === TransactionType.WITHDRAWAL) {
+        if (Number(account.balance) < amount) {
           throw new BadRequestException('Saldo insuficiente');
         }
-        account.balance = Number(account.balance) - Number(dto.amount);
+        account.balance = Number(account.balance) - amount;
       }
 
-      if (dto.type === TransactionType.TRANSFER) {
-        if (!dto.targetAccountId) {
+      if (transaction.type === TransactionType.TRANSFER) {
+        if (!transaction.targetAccountId) {
           throw new BadRequestException(
             'Conta destino é obrigatória para transferência',
           );
         }
 
-        if (Number(account.balance) < dto.amount) {
+        if (Number(account.balance) < amount) {
           throw new BadRequestException('Saldo insuficiente');
         }
 
         const target: Account | null = await queryRunner.manager.findOne(
           Account,
           {
-            where: { id: dto.targetAccountId, active: true },
+            where: { id: transaction.targetAccountId, active: true },
             lock: { mode: 'pessimistic_write' },
           },
         );
@@ -119,8 +169,8 @@ export class TransactionsService {
         if (!target)
           throw new NotFoundException('Conta destino não encontrada');
 
-        account.balance = Number(account.balance) - Number(dto.amount);
-        target.balance = Number(target.balance) + Number(dto.amount);
+        account.balance = Number(account.balance) - amount;
+        target.balance = Number(target.balance) + amount;
 
         await queryRunner.manager.save(Account, account);
         await queryRunner.manager.save(Account, target);
@@ -131,12 +181,12 @@ export class TransactionsService {
 
         // transação de entrada — conta destino
         const incomingTransaction = queryRunner.manager.create(Transaction, {
-          accountId: dto.targetAccountId,
+          accountId: transaction.targetAccountId,
           type: TransactionType.DEPOSIT, // aparece como depósito no extrato do destino
-          amount: dto.amount,
-          description: `Transferência recebida de ${dto.accountId}`,
+          amount,
+          description: `Transferência recebida de ${transaction.accountId}`,
           status: TransactionStatus.COMPLETED,
-          targetAccountId: dto.accountId,
+          targetAccountId: transaction.accountId,
         });
         await queryRunner.manager.save(Transaction, incomingTransaction);
 
@@ -144,9 +194,9 @@ export class TransactionsService {
 
         await this.rabbitMQService.publish('transaction.completed', {
           userId: account.userId,
-          accountId: dto.accountId,
-          type: dto.type,
-          amount: dto.amount,
+          accountId: transaction.accountId,
+          type: transaction.type,
+          amount,
         });
 
         return transaction;
@@ -161,9 +211,9 @@ export class TransactionsService {
 
       await this.rabbitMQService.publish('transaction.completed', {
         userId: account.userId,
-        accountId: dto.accountId,
-        type: dto.type,
-        amount: dto.amount,
+        accountId: transaction.accountId,
+        type: transaction.type,
+        amount,
       });
 
       return transaction;
@@ -230,7 +280,9 @@ export class TransactionsService {
   }
 
   // Transferir para a própria conta não é permitido: o débito seria sobrescrito pelo crédito
-  private assertDistinctAccounts(dto: CreateTransactionDto): void {
+  private assertDistinctAccounts(
+    dto: Pick<CreateTransactionDto, 'type' | 'accountId' | 'targetAccountId'>,
+  ): void {
     if (
       dto.type === TransactionType.TRANSFER &&
       dto.targetAccountId === dto.accountId

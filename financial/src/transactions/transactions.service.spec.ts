@@ -7,7 +7,11 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { TransactionsService } from './transactions.service';
-import { Transaction, TransactionType } from './entities/transaction.entity';
+import {
+  Transaction,
+  TransactionStatus,
+  TransactionType,
+} from './entities/transaction.entity';
 import { Account } from '../accounts/entities/account.entity';
 import { QueueService } from '../common/queue/queue.service';
 import { RabbitMQService } from '../common/rabbitmq/rabbitmq.service';
@@ -36,6 +40,10 @@ describe('TransactionsService', () => {
 
   const mockTransactionRepo = {
     find: jest.fn(),
+    findOne: jest.fn(),
+    create: jest.fn(),
+    save: jest.fn(),
+    update: jest.fn(),
     createQueryBuilder: jest.fn(),
   };
 
@@ -79,6 +87,12 @@ describe('TransactionsService', () => {
       (_: unknown, data: object) => ({ ...data }),
     );
     mockRabbitMQService.publish.mockResolvedValue(undefined);
+    mockTransactionRepo.create.mockImplementation((data: object) => ({
+      ...data,
+    }));
+    mockTransactionRepo.save.mockImplementation((data: object) =>
+      Promise.resolve({ id: 'tx-1', ...data }),
+    );
   });
 
   afterEach(() => jest.resetAllMocks());
@@ -107,6 +121,7 @@ describe('TransactionsService', () => {
         'Conta destino deve ser diferente da conta de origem',
       );
       expect(mockQueueService.enqueueTransaction).not.toHaveBeenCalled();
+      expect(mockTransactionRepo.save).not.toHaveBeenCalled();
     });
 
     it('deve enfileirar quando o usuário é dono da conta', async () => {
@@ -130,8 +145,12 @@ describe('TransactionsService', () => {
       expect(mockAccountRepo.findOne).toHaveBeenCalledWith({
         where: { id: 'acc-1', active: true },
       });
-      expect(mockQueueService.enqueueTransaction).toHaveBeenCalledWith(dto);
-      expect(result).toEqual({ jobId: 'job-1', status: 'PENDING' });
+      expect(mockQueueService.enqueueTransaction).toHaveBeenCalledWith('tx-1');
+      expect(result).toEqual({
+        transactionId: 'tx-1',
+        jobId: 'job-1',
+        status: 'PENDING',
+      });
     });
 
     it('deve lançar ForbiddenException quando o usuário não é dono da conta', async () => {
@@ -176,8 +195,64 @@ describe('TransactionsService', () => {
         role: 'ADMIN',
       });
 
-      expect(mockQueueService.enqueueTransaction).toHaveBeenCalledWith(dto);
-      expect(result).toEqual({ jobId: 'job-1', status: 'PENDING' });
+      expect(mockQueueService.enqueueTransaction).toHaveBeenCalledWith('tx-1');
+      expect(result).toEqual({
+        transactionId: 'tx-1',
+        jobId: 'job-1',
+        status: 'PENDING',
+      });
+    });
+
+    it('deve gravar a transação como PENDING antes de enfileirar', async () => {
+      mockAccountRepo.findOne.mockResolvedValue({
+        id: 'acc-1',
+        userId: 'user-1',
+        active: true,
+      });
+      mockQueueService.enqueueTransaction.mockResolvedValue('job-1');
+      const dto: CreateTransactionDto = {
+        accountId: 'acc-1',
+        type: TransactionType.TRANSFER,
+        amount: 100,
+        description: 'Reserva',
+        targetAccountId: 'acc-2',
+      };
+
+      await service.create(dto, { id: 'user-1', role: 'USER' });
+
+      expect(mockTransactionRepo.save).toHaveBeenCalledWith({
+        ...dto,
+        status: TransactionStatus.PENDING,
+      });
+      expect(mockTransactionRepo.save.mock.invocationCallOrder[0]).toBeLessThan(
+        mockQueueService.enqueueTransaction.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('deve marcar a transação como FAILED quando não consegue enfileirar', async () => {
+      mockAccountRepo.findOne.mockResolvedValue({
+        id: 'acc-1',
+        userId: 'user-1',
+        active: true,
+      });
+      const falha = new Error('Redis indisponível');
+      mockQueueService.enqueueTransaction.mockRejectedValue(falha);
+      const dto: CreateTransactionDto = {
+        accountId: 'acc-1',
+        type: TransactionType.DEPOSIT,
+        amount: 100,
+      };
+
+      await expect(
+        service.create(dto, { id: 'user-1', role: 'USER' }),
+      ).rejects.toBe(falha);
+      expect(mockTransactionRepo.update).toHaveBeenCalledWith(
+        { id: 'tx-1', status: TransactionStatus.PENDING },
+        {
+          status: TransactionStatus.FAILED,
+          failureReason: 'Não foi possível processar a transação',
+        },
+      );
     });
 
     it('deve lançar NotFoundException quando a conta não existe', async () => {
@@ -212,25 +287,93 @@ describe('TransactionsService', () => {
   });
 
   describe('process()', () => {
+    // A transação gravada como PENDING no create(): é ela que o worker processa
+    const pendente = (dto: CreateTransactionDto) => ({
+      id: 'tx-1',
+      status: TransactionStatus.PENDING,
+      ...dto,
+    });
+
+    it('deve carregar a transação pelo id com lock antes de movimentar o saldo', async () => {
+      const account = { id: 'acc-1', userId: 'user-1', balance: 10 };
+      mockQueryRunner.manager.findOne
+        .mockResolvedValueOnce(
+          pendente({
+            accountId: 'acc-1',
+            type: TransactionType.DEPOSIT,
+            amount: 5,
+          }),
+        )
+        .mockResolvedValueOnce(account);
+
+      await service.process('tx-1');
+
+      expect(mockQueryRunner.manager.findOne).toHaveBeenNthCalledWith(
+        1,
+        Transaction,
+        { where: { id: 'tx-1' }, lock: { mode: 'pessimistic_write' } },
+      );
+    });
+
+    it('deve lançar NotFoundException quando a transação não existe', async () => {
+      mockQueryRunner.manager.findOne.mockResolvedValueOnce(null);
+
+      await expect(service.process('tx-x')).rejects.toThrow(
+        'Transação não encontrada',
+      );
+      expect(mockQueryRunner.rollbackTransaction).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([TransactionStatus.COMPLETED, TransactionStatus.FAILED])(
+      'deve ignorar uma transação já %s, sem movimentar saldo de novo',
+      async (status) => {
+        const jaProcessada = {
+          ...pendente({
+            accountId: 'acc-1',
+            type: TransactionType.DEPOSIT,
+            amount: 5,
+          }),
+          status,
+        };
+        mockQueryRunner.manager.findOne.mockResolvedValueOnce(jaProcessada);
+
+        const result = await service.process('tx-1');
+
+        expect(result).toBe(jaProcessada);
+        expect(mockQueryRunner.manager.findOne).toHaveBeenCalledTimes(1);
+        expect(mockQueryRunner.manager.save).not.toHaveBeenCalled();
+        expect(mockRabbitMQService.publish).not.toHaveBeenCalled();
+      },
+    );
+
     describe('DEPOSIT', () => {
-      it('deve incrementar o saldo da conta', async () => {
+      it('deve incrementar o saldo e concluir a transação gravada', async () => {
         const account = {
           id: 'acc-1',
           userId: 'user-1',
           balance: 1000,
           active: true,
         };
-        mockQueryRunner.manager.findOne.mockResolvedValue(account);
+        mockQueryRunner.manager.findOne
+          .mockResolvedValueOnce(
+            pendente({
+              accountId: 'acc-1',
+              type: TransactionType.DEPOSIT,
+              amount: 200,
+            }),
+          )
+          .mockResolvedValueOnce(account);
 
-        const dto: CreateTransactionDto = {
-          accountId: 'acc-1',
-          type: TransactionType.DEPOSIT,
-          amount: 200,
-        };
-
-        await service.process(dto);
+        await service.process('tx-1');
 
         expect(account.balance).toBe(1200);
+        expect(mockQueryRunner.manager.save).toHaveBeenCalledWith(
+          Transaction,
+          expect.objectContaining({
+            id: 'tx-1',
+            status: TransactionStatus.COMPLETED,
+          }),
+        );
         expect(mockQueryRunner.commitTransaction).toHaveBeenCalledTimes(1);
         expect(mockRabbitMQService.publish).toHaveBeenCalledWith(
           'transaction.completed',
@@ -250,15 +393,17 @@ describe('TransactionsService', () => {
           balance: 1000,
           active: true,
         };
-        mockQueryRunner.manager.findOne.mockResolvedValue(account);
+        mockQueryRunner.manager.findOne
+          .mockResolvedValueOnce(
+            pendente({
+              accountId: 'acc-1',
+              type: TransactionType.WITHDRAWAL,
+              amount: 300,
+            }),
+          )
+          .mockResolvedValueOnce(account);
 
-        const dto: CreateTransactionDto = {
-          accountId: 'acc-1',
-          type: TransactionType.WITHDRAWAL,
-          amount: 300,
-        };
-
-        await service.process(dto);
+        await service.process('tx-1');
 
         expect(account.balance).toBe(700);
         expect(mockQueryRunner.commitTransaction).toHaveBeenCalledTimes(1);
@@ -271,36 +416,44 @@ describe('TransactionsService', () => {
           balance: 100,
           active: true,
         };
-        mockQueryRunner.manager.findOne.mockResolvedValue(account);
+        mockQueryRunner.manager.findOne
+          .mockResolvedValueOnce(
+            pendente({
+              accountId: 'acc-1',
+              type: TransactionType.WITHDRAWAL,
+              amount: 500,
+            }),
+          )
+          .mockResolvedValueOnce(account);
 
-        const dto: CreateTransactionDto = {
-          accountId: 'acc-1',
-          type: TransactionType.WITHDRAWAL,
-          amount: 500,
-        };
-
-        await expect(service.process(dto)).rejects.toThrow(BadRequestException);
+        await expect(service.process('tx-1')).rejects.toThrow(
+          BadRequestException,
+        );
         expect(mockQueryRunner.rollbackTransaction).toHaveBeenCalledTimes(1);
         expect(mockQueryRunner.commitTransaction).not.toHaveBeenCalled();
       });
     });
 
     describe('TRANSFER', () => {
-      it('deve rejeitar transferência para a mesma conta sem abrir transação no banco', async () => {
-        const dto: CreateTransactionDto = {
-          accountId: 'acc-1',
-          type: TransactionType.TRANSFER,
-          amount: 100,
-          targetAccountId: 'acc-1',
-        };
+      it('deve rejeitar transferência para a mesma conta sem movimentar saldo', async () => {
+        mockQueryRunner.manager.findOne.mockResolvedValueOnce(
+          pendente({
+            accountId: 'acc-1',
+            type: TransactionType.TRANSFER,
+            amount: 100,
+            targetAccountId: 'acc-1',
+          }),
+        );
 
-        const promise = service.process(dto);
+        const promise = service.process('tx-1');
 
         await expect(promise).rejects.toThrow(BadRequestException);
         await expect(promise).rejects.toThrow(
           'Conta destino deve ser diferente da conta de origem',
         );
-        expect(mockDataSource.createQueryRunner).not.toHaveBeenCalled();
+        expect(mockQueryRunner.manager.findOne).toHaveBeenCalledTimes(1);
+        expect(mockQueryRunner.manager.save).not.toHaveBeenCalled();
+        expect(mockQueryRunner.rollbackTransaction).toHaveBeenCalledTimes(1);
       });
 
       it('deve debitar da conta de origem e creditar na conta de destino', async () => {
@@ -318,22 +471,30 @@ describe('TransactionsService', () => {
         };
 
         mockQueryRunner.manager.findOne
+          .mockResolvedValueOnce(
+            pendente({
+              accountId: 'acc-1',
+              type: TransactionType.TRANSFER,
+              amount: 300,
+              targetAccountId: 'acc-2',
+            }),
+          )
           .mockResolvedValueOnce(sourceAccount)
           .mockResolvedValueOnce(targetAccount);
 
-        const dto: CreateTransactionDto = {
-          accountId: 'acc-1',
-          type: TransactionType.TRANSFER,
-          amount: 300,
-          targetAccountId: 'acc-2',
-        };
-
-        await service.process(dto);
+        await service.process('tx-1');
 
         expect(sourceAccount.balance).toBe(700);
         expect(targetAccount.balance).toBe(800);
         expect(mockQueryRunner.commitTransaction).toHaveBeenCalledTimes(1);
         expect(mockQueryRunner.manager.save).toHaveBeenCalledTimes(4);
+        expect(mockQueryRunner.manager.save).toHaveBeenCalledWith(
+          Transaction,
+          expect.objectContaining({
+            id: 'tx-1',
+            status: TransactionStatus.COMPLETED,
+          }),
+        );
       });
 
       it('deve lançar BadRequestException quando targetAccountId não é informado', async () => {
@@ -343,15 +504,17 @@ describe('TransactionsService', () => {
           balance: 1000,
           active: true,
         };
-        mockQueryRunner.manager.findOne.mockResolvedValue(account);
+        mockQueryRunner.manager.findOne
+          .mockResolvedValueOnce(
+            pendente({
+              accountId: 'acc-1',
+              type: TransactionType.TRANSFER,
+              amount: 300,
+            }),
+          )
+          .mockResolvedValueOnce(account);
 
-        const dto: CreateTransactionDto = {
-          accountId: 'acc-1',
-          type: TransactionType.TRANSFER,
-          amount: 300,
-        };
-
-        const promise = service.process(dto);
+        const promise = service.process('tx-1');
 
         await expect(promise).rejects.toThrow(BadRequestException);
         await expect(promise).rejects.toThrow('Conta destino é obrigatória');
@@ -365,16 +528,18 @@ describe('TransactionsService', () => {
           balance: 100,
           active: true,
         };
-        mockQueryRunner.manager.findOne.mockResolvedValue(account);
+        mockQueryRunner.manager.findOne
+          .mockResolvedValueOnce(
+            pendente({
+              accountId: 'acc-1',
+              type: TransactionType.TRANSFER,
+              amount: 500,
+              targetAccountId: 'acc-2',
+            }),
+          )
+          .mockResolvedValueOnce(account);
 
-        const dto: CreateTransactionDto = {
-          accountId: 'acc-1',
-          type: TransactionType.TRANSFER,
-          amount: 500,
-          targetAccountId: 'acc-2',
-        };
-
-        const promise = service.process(dto);
+        const promise = service.process('tx-1');
 
         await expect(promise).rejects.toThrow(BadRequestException);
         await expect(promise).rejects.toThrow('Saldo insuficiente');
