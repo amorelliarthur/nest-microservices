@@ -5,7 +5,7 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
-import { Repository } from 'typeorm';
+import { QueryFailedError, Repository } from 'typeorm';
 import { AccountsService } from './accounts.service';
 import { Account, AccountType } from './entities/account.entity';
 import type { Requester } from '../common/auth/requester';
@@ -96,6 +96,50 @@ describe('AccountsService', () => {
       });
 
       expect(result.type).toBe(AccountType.SAVINGS);
+    });
+
+    describe('quando duas criações simultâneas passam pela verificação', () => {
+      const uniqueViolation = (constraint: string) =>
+        new QueryFailedError(
+          'INSERT INTO "accounts" ...',
+          [],
+          Object.assign(new Error('duplicate key value'), {
+            code: '23505',
+            constraint,
+          }),
+        );
+
+      beforeEach(() => {
+        accountRepo.findOne.mockResolvedValue(null);
+        accountRepo.create.mockReturnValue(buildAccount());
+      });
+
+      it('deve lançar ConflictException quando o banco recusa pelo índice de conta ativa por tipo', async () => {
+        accountRepo.save.mockRejectedValue(
+          uniqueViolation('UQ_accounts_user_id_type_active'),
+        );
+
+        const erro = await service.create(dto).catch((e: unknown) => e);
+
+        expect(erro).toBeInstanceOf(ConflictException);
+        expect((erro as ConflictException).message).toBe(
+          'Usuário já possui uma conta deste tipo',
+        );
+      });
+
+      it('deve repassar a violação de unicidade de outra constraint sem convertê-la', async () => {
+        const original = uniqueViolation('PK_outra_constraint');
+        accountRepo.save.mockRejectedValue(original);
+
+        await expect(service.create(dto)).rejects.toBe(original);
+      });
+
+      it('deve repassar outros erros do banco sem convertê-los', async () => {
+        const original = new Error('connection terminated');
+        accountRepo.save.mockRejectedValue(original);
+
+        await expect(service.create(dto)).rejects.toBe(original);
+      });
     });
   });
 

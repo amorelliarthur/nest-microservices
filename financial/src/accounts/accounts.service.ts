@@ -4,12 +4,28 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Account } from './entities/account.entity';
+import { QueryFailedError, Repository } from 'typeorm';
+import {
+  Account,
+  UNIQUE_ACTIVE_ACCOUNT_INDEX,
+} from './entities/account.entity';
 import { CreateAccountDto } from './dto/create-account.dto';
 import { assertAccountAccess } from './account-access';
 import { canAccess } from '../common/auth/requester';
 import type { Requester } from '../common/auth/requester';
+
+const PG_UNIQUE_VIOLATION = '23505';
+
+const ACCOUNT_TYPE_CONFLICT = 'Usuário já possui uma conta deste tipo';
+
+function isUniqueActiveAccountViolation(err: unknown): boolean {
+  if (!(err instanceof QueryFailedError)) return false;
+  const driverError = err.driverError as { code?: string; constraint?: string };
+  return (
+    driverError.code === PG_UNIQUE_VIOLATION &&
+    driverError.constraint === UNIQUE_ACTIVE_ACCOUNT_INDEX
+  );
+}
 
 @Injectable()
 export class AccountsService {
@@ -25,11 +41,20 @@ export class AccountsService {
     });
 
     if (exists) {
-      throw new ConflictException('Usuário já possui uma conta deste tipo');
+      throw new ConflictException(ACCOUNT_TYPE_CONFLICT);
     }
 
     const account = this.accountRepo.create(dto);
-    return this.accountRepo.save(account);
+    try {
+      return await this.accountRepo.save(account);
+    } catch (err: unknown) {
+      // duas criações simultâneas podem passar pela consulta acima; o índice
+      // único no banco recusa a segunda, que recebe o mesmo 409
+      if (isUniqueActiveAccountViolation(err)) {
+        throw new ConflictException(ACCOUNT_TYPE_CONFLICT);
+      }
+      throw err;
+    }
   }
 
   async findByUser(userId: string, requester: Requester): Promise<Account[]> {

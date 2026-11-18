@@ -198,6 +198,7 @@ Responsabilidades:
 Responsabilidades:
 
 - Criação e gerenciamento de contas (corrente e poupança)
+- No máximo uma conta ativa de cada tipo por usuário, garantido também no banco por um índice único parcial (`user_id`, `type` com `active = true`): de duas criações simultâneas, a segunda recebe `409`
 - Depósitos, saques e transferências com transações atômicas
 - Controle de saldo com pessimistic lock
 - Extrato de transações por conta
