@@ -268,9 +268,13 @@ const listTransactions = async (ctx, accountId) =>
     .data;
 
 const seedTransactions = async (ctx, accounts) => {
-  const existing = await listTransactions(ctx, accounts.checking.id);
+  // Só as concluídas contam: PENDING ou FAILED de uma execução anterior que não
+  // terminou (ex.: worker parado) não podem impedir o seed de rodar de novo
+  const existing = (await listTransactions(ctx, accounts.checking.id)).filter(
+    (t) => t.status === 'COMPLETED',
+  );
   if (existing.length > 0) {
-    console.log(`  transações: já existem ${existing.length} na CHECKING, nada a criar`);
+    console.log(`  transações: já existem ${existing.length} concluídas na CHECKING, nada a criar`);
     return false;
   }
 

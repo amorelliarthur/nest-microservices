@@ -14,7 +14,7 @@ O assistente apenas consulta dados. Ele não faz depósitos, saques nem transfer
 
 ## Como o assistente calcula os gastos
 
-Os totais de cada conta são calculados pelo sistema, e não estimados pela inteligência artificial. Em cada conta, gastos (saques) e transferências enviadas são somados separadamente, e as entradas aparecem em um total próprio. Quando a pergunta envolve mais de uma conta, a soma entre as contas é feita pelo assistente.
+Os totais de cada conta são calculados pelo sistema, e não estimados pela inteligência artificial. Em cada conta, gastos (saques) e transferências enviadas são somados separadamente, e as entradas aparecem em um total próprio. Somente transações concluídas entram nos totais: as pendentes e as que falharam não movimentaram dinheiro e são ignoradas. Quando a pergunta envolve mais de uma conta, a soma entre as contas é feita pelo assistente.
 
 ## Como o assistente entende os períodos
 

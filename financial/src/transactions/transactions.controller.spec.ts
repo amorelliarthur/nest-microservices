@@ -15,6 +15,7 @@ describe('TransactionsController (HTTP)', () => {
     create: jest.fn(),
     findByAccount: jest.fn(),
     getBalance: jest.fn(),
+    findById: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -51,6 +52,43 @@ describe('TransactionsController (HTTP)', () => {
       id: 'user-1',
       role: 'USER',
     });
+  });
+
+  it('GET /transactions/:id deve consultar a transação com o usuário do token interno', async () => {
+    const id = '6f1c2b1e-8a4d-4f0e-9c3b-2d5e7a9b1c3d';
+    transactionsService.findById.mockResolvedValue({
+      id,
+      status: 'FAILED',
+      failureReason: 'Saldo insuficiente',
+    });
+
+    await request(app.getHttpServer())
+      .get(`/transactions/${id}`)
+      .set('x-internal-token', tokens.issue('user-1'))
+      .expect(200)
+      .expect({ id, status: 'FAILED', failureReason: 'Saldo insuficiente' });
+
+    expect(transactionsService.findById).toHaveBeenCalledWith(id, {
+      id: 'user-1',
+      role: 'USER',
+    });
+  });
+
+  it('GET /transactions/:id deve responder 400 para um id que não é UUID, sem consultar', async () => {
+    await request(app.getHttpServer())
+      .get('/transactions/nao-e-uuid')
+      .set('x-internal-token', tokens.issue('user-1'))
+      .expect(400);
+
+    expect(transactionsService.findById).not.toHaveBeenCalled();
+  });
+
+  it('GET /transactions/:id deve responder 401 sem token interno', async () => {
+    await request(app.getHttpServer())
+      .get('/transactions/6f1c2b1e-8a4d-4f0e-9c3b-2d5e7a9b1c3d')
+      .expect(401);
+
+    expect(transactionsService.findById).not.toHaveBeenCalled();
   });
 
   it('POST /transactions deve responder 401 sem token interno, mesmo com x-user-*', async () => {

@@ -203,6 +203,7 @@ Responsabilidades:
 - Controle de saldo com pessimistic lock
 - Extrato de transações por conta
 - Processamento assíncrono de transações via fila BullMQ + Redis
+- Toda transação fica registrada com seu status (`PENDING`, `COMPLETED` ou `FAILED`); as que falham guardam o motivo, consultável em `GET /transactions/:id`
 
 ## AI Service
 
@@ -228,7 +229,7 @@ Tools disponíveis (somente leitura):
 | ------------------- | --------------------------------------------------------------------------- |
 | `list_accounts`     | Lista as contas do usuário com tipo e saldo                                 |
 | `get_balance`       | Saldo de uma conta do usuário                                               |
-| `list_transactions` | Extrato filtrado por período e tipo, com totais calculados em código        |
+| `list_transactions` | Extrato de transações concluídas, filtrado por período e tipo, com totais calculados em código |
 | `search_knowledge`  | Busca trechos da base de conhecimento sobre o produto e educação financeira |
 
 ### Decisões de segurança e confiabilidade
@@ -386,15 +387,26 @@ Processa transações financeiras em background, retornando resposta imediata ao
 
 ```
 POST /transactions
-  → enfileira o job no Redis via BullMQ
-  → retorna { jobId, status: 'PENDING' } imediatamente
+  → grava a transação no PostgreSQL com status: 'PENDING'
+  → enfileira o job no Redis via BullMQ (o job leva só o id da transação)
+  → retorna { transactionId, jobId, status: 'PENDING' } imediatamente
 
 Background (Worker):
   → pega o job da fila
-  → processa a transação no PostgreSQL (com transação atômica)
+  → trava a transação gravada e processa (com transação atômica)
   → salva com status: 'COMPLETED'
-  → em caso de falha: tenta mais 2 vezes (backoff exponencial: 1s, 2s, 4s)
+  → transação que já não está PENDING é ignorada: um job repetido não movimenta o saldo duas vezes
+  → falha de regra de negócio (ex.: saldo insuficiente): 'FAILED' com o motivo, sem novas tentativas
+  → falha temporária (banco, rede): tenta mais 2 vezes (backoff exponencial: 1s, 2s);
+    esgotadas as tentativas, 'FAILED' com a mensagem genérica "Não foi possível processar a transação"
+
+GET /transactions/:id
+  → status da transação e, se 'FAILED', o motivo (failureReason)
 ```
+
+**Limitação conhecida:** o `FAILED` só é gravado quando a falha passa pelo worker. Uma transação pode ficar `PENDING` para sempre se o worker cair no meio do job e o BullMQ descartá-lo como travado, se o job se perder no Redis ou se o banco estiver fora do ar justamente ao gravar o `FAILED` da última tentativa (esse último caso fica registrado no log como erro). Veja a issue #55.
+
+**Deploy:** aplique a migration antes de subir esta versão. Jobs enfileirados no formato antigo (com a transação inteira no job, sem `transactionId`) são recusados pelo worker sem tocar em nenhuma transação, e o pedido se perde: esvazie a fila antes do deploy.
 
 ---
 
@@ -689,6 +701,7 @@ Todos os endpoints devem ser acessados via API Gateway.
 | POST   | `/financial/transactions`                     | Enfileirar transação (assíncrono)       | ✅   |
 | GET    | `/financial/transactions/account/:id`         | Extrato da conta                        | ✅   |
 | GET    | `/financial/transactions/account/:id/balance` | Saldo da conta                          | ✅   |
+| GET    | `/financial/transactions/:id`                 | Status da transação (e motivo da falha) | ✅   |
 
 ## AI Service
 
@@ -762,8 +775,27 @@ Resposta imediata:
 
 ```json
 {
+  "transactionId": "6f1c2b1e-8a4d-4f0e-9c3b-2d5e7a9b1c3d",
   "jobId": "1",
   "status": "PENDING"
+}
+```
+
+### Consultar o status de uma transação
+
+```
+GET /financial/transactions/6f1c2b1e-8a4d-4f0e-9c3b-2d5e7a9b1c3d
+```
+
+Resposta de uma transação recusada (resumida):
+
+```json
+{
+  "id": "6f1c2b1e-8a4d-4f0e-9c3b-2d5e7a9b1c3d",
+  "type": "WITHDRAWAL",
+  "amount": "1000.00",
+  "status": "FAILED",
+  "failureReason": "Saldo insuficiente"
 }
 ```
 
@@ -956,7 +988,7 @@ O projeto possui testes unitários com Jest cobrindo a lógica de negócio dos s
 | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `auth`       | Login (sucesso, credenciais inválidas, serviço indisponível), validação de token (válido, ausente, blacklist, inválido), logout, emissão do token interno só com o segredo do gateway, token de serviço no login (audiência separada do token interno)                                                                                                                                                                                                     |
 | `user`       | Criação (novo, CPF/email duplicado, reativação de deletado), validação de CPF (dígitos verificadores, máscara, valores que não são texto), busca por ID com cache (HIT/MISS), autenticação, atualização e remoção (soft delete), token interno nas rotas protegidas (x-user-* ignorados), login só com o token de serviço do auth, falha ao publicar evento no RabbitMQ registrada como erro                                                                                                                                                                                   |
-| `financial`  | Transações (depósito, saque, transferência, saldo insuficiente), contas (criação, conflito de tipo duplicado, busca, desativação), verificação do token interno (chave, algoritmo, emissor, audiência, validade), níveis de log do worker e dos eventos do RabbitMQ (falha de job e de publicação como erro, conta já existente como aviso)                                                                                                                                                                                                   |
+| `financial`  | Transações (depósito, saque, transferência, saldo insuficiente, gravação como PENDING, FAILED com motivo, job repetido sem movimentar de novo, consulta de status com verificação de dono), contas (criação, conflito de tipo duplicado, busca, desativação), verificação do token interno (chave, algoritmo, emissor, audiência, validade), níveis de log do worker e dos eventos do RabbitMQ (falha de job e de publicação como erro, conta já existente como aviso)                                                                                                                                                                                                   |
 | `gateway`    | Rate limiting (incremento, TTL, bloqueio em 429, IP da conexão sem confiar no `x-forwarded-for`), rotas públicas vs protegidas, autenticação (token válido/inválido/ausente, serviço indisponível), descarte de headers internos forjados e repasse só do token interno, bloqueio de `/user/authenticate` (inclusive variações de caixa, barras e encoding)                                                                                                                                                                                  |
 | `ai-service` | Structured output (retry e erro), mapeamento Gemini, classificação de erros do provedor, retry com backoff, fallback de modelo, verificação de dono, tools financeiras (totais em centavos, gastos vs transferências, filtros, truncamento), loop do agente (limite de iterações), e2e com guard, validação e erros 401/400/502/503, token interno no guard e repasse ao financial |
 

@@ -14,11 +14,15 @@ O valor mínimo de qualquer transação, seja depósito, saque ou transferência
 
 ## Por que a transação aparece como pendente
 
-As transações são processadas em segundo plano. Ao pedir um depósito, saque ou transferência, o sistema responde imediatamente com o status "pendente" (PENDING), e o processamento é concluído logo depois. Por isso, o saldo e o extrato podem levar um instante para refletir a transação.
+As transações são processadas em segundo plano. Ao pedir um depósito, saque ou transferência, o sistema registra a transação e responde imediatamente com o identificador dela e o status "pendente" (PENDING). O processamento é concluído logo depois. Enquanto isso, a transação aparece no extrato como pendente, e o saldo só muda quando ela é concluída (COMPLETED).
 
 ## Saldo insuficiente
 
-Um saque ou uma transferência só é concluído se a conta tiver saldo suficiente. Quando o saldo é insuficiente, a transação é recusada de forma definitiva, sem novas tentativas: ela não aparece no extrato, o saldo não muda e não há aviso de falha. Para confirmar se uma transação foi concluída, consulte o extrato ou o saldo da conta alguns instantes depois do pedido.
+Um saque ou uma transferência só é concluído se a conta tiver saldo suficiente. Quando o saldo é insuficiente, a transação é recusada de forma definitiva, sem novas tentativas: ela fica registrada com o status "falhou" (FAILED) e o motivo "Saldo insuficiente", e o saldo da conta não muda.
+
+## Como saber se uma transação foi concluída
+
+Cada transação pode ser consultada pelo seu identificador, devolvido no momento do pedido. A consulta mostra o status: pendente (PENDING), concluída (COMPLETED) ou falhou (FAILED). Quando a transação falha, a consulta também mostra o motivo. Falhas de regra, como saldo insuficiente ou conta não encontrada, trazem a explicação da regra. Falhas técnicas são processadas em até três tentativas automáticas; se todas falharem, o motivo exibido é "Não foi possível processar a transação". Somente o dono da conta e administradores podem consultar uma transação.
 
 ## Quem pode movimentar uma conta
 
