@@ -6,6 +6,7 @@ import {
   Body,
   HttpCode,
   HttpStatus,
+  ParseUUIDPipe,
   UseGuards,
 } from '@nestjs/common';
 import { TransactionsService } from './transactions.service';
@@ -34,6 +35,15 @@ export class TransactionsController {
     @CurrentRequester() requester: Requester,
   ) {
     return this.transactionsService.findByAccount(accountId, requester);
+  }
+
+  // Consulta do status depois do POST, que responde antes do processamento
+  @Get(':id')
+  findById(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentRequester() requester: Requester,
+  ) {
+    return this.transactionsService.findById(id, requester);
   }
 
   @Get('account/:accountId/balance')

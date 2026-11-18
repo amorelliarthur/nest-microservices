@@ -226,6 +226,21 @@ export class TransactionsService {
     }
   }
 
+  // status de uma transação (PENDING, COMPLETED ou FAILED, com o motivo)
+  async findById(id: string, requester: Requester): Promise<Transaction> {
+    const transaction = await this.transactionRepo.findOne({ where: { id } });
+    if (!transaction) throw new NotFoundException('Transação não encontrada');
+
+    const account = await this.accountRepo.findOne({
+      where: { id: transaction.accountId },
+    });
+    // transação de outro usuário responde igual a uma inexistente
+    if (!account || !canAccess(requester, account.userId)) {
+      throw new NotFoundException('Transação não encontrada');
+    }
+    return transaction;
+  }
+
   // extrato com query otimizada pelo índice composto
   async findByAccount(
     accountId: string,

@@ -548,6 +548,70 @@ describe('TransactionsService', () => {
     });
   });
 
+  describe('findById()', () => {
+    const transacao = {
+      id: 'tx-1',
+      accountId: 'acc-1',
+      status: TransactionStatus.FAILED,
+      failureReason: 'Saldo insuficiente',
+    };
+
+    it('deve retornar a transação com status e motivo quando o usuário é dono da conta', async () => {
+      mockTransactionRepo.findOne.mockResolvedValue(transacao);
+      mockAccountRepo.findOne.mockResolvedValue({
+        id: 'acc-1',
+        userId: 'user-1',
+      });
+
+      const result = await service.findById('tx-1', {
+        id: 'user-1',
+        role: 'USER',
+      });
+
+      expect(result).toBe(transacao);
+      expect(mockTransactionRepo.findOne).toHaveBeenCalledWith({
+        where: { id: 'tx-1' },
+      });
+      expect(mockAccountRepo.findOne).toHaveBeenCalledWith({
+        where: { id: 'acc-1' },
+      });
+    });
+
+    it('deve permitir que ADMIN consulte a transação de outro usuário', async () => {
+      mockTransactionRepo.findOne.mockResolvedValue(transacao);
+      mockAccountRepo.findOne.mockResolvedValue({
+        id: 'acc-1',
+        userId: 'user-2',
+      });
+
+      await expect(
+        service.findById('tx-1', { id: 'admin-1', role: 'ADMIN' }),
+      ).resolves.toBe(transacao);
+    });
+
+    it('deve responder 404 para transação de outro usuário, igual a uma inexistente', async () => {
+      mockTransactionRepo.findOne.mockResolvedValue(transacao);
+      mockAccountRepo.findOne.mockResolvedValue({
+        id: 'acc-1',
+        userId: 'user-2',
+      });
+
+      const promise = service.findById('tx-1', { id: 'user-1', role: 'USER' });
+
+      await expect(promise).rejects.toThrow(NotFoundException);
+      await expect(promise).rejects.toThrow('Transação não encontrada');
+    });
+
+    it('deve lançar NotFoundException quando a transação não existe', async () => {
+      mockTransactionRepo.findOne.mockResolvedValue(null);
+
+      const promise = service.findById('tx-x', { id: 'user-1', role: 'USER' });
+
+      await expect(promise).rejects.toThrow('Transação não encontrada');
+      expect(mockAccountRepo.findOne).not.toHaveBeenCalled();
+    });
+  });
+
   describe('findByAccount()', () => {
     it('deve retornar o extrato quando o usuário é dono da conta', async () => {
       const account = {
