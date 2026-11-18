@@ -404,7 +404,7 @@ GET /transactions/:id
   → status da transação e, se 'FAILED', o motivo (failureReason)
 ```
 
-**Limitação conhecida:** se o banco estiver fora do ar justamente ao gravar o `FAILED` da última tentativa, a transação continua `PENDING` (a falha fica registrada no log como erro).
+**Limitação conhecida:** o `FAILED` só é gravado quando a falha passa pelo worker. Uma transação pode ficar `PENDING` para sempre se o worker cair no meio do job e o BullMQ descartá-lo como travado, se o job se perder no Redis ou se o banco estiver fora do ar justamente ao gravar o `FAILED` da última tentativa (esse último caso fica registrado no log como erro). Veja a issue #55.
 
 **Deploy:** aplique a migration antes de subir esta versão. Jobs enfileirados no formato antigo (com a transação inteira no job, sem `transactionId`) são recusados pelo worker sem tocar em nenhuma transação, e o pedido se perde: esvazie a fila antes do deploy.
 
