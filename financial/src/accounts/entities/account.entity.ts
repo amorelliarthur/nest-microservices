@@ -16,6 +16,8 @@ export enum AccountType {
 
 // no máximo uma conta ativa de cada tipo por usuário, garantido pelo banco
 // (a verificação no service sozinha não impede criações simultâneas)
+// O migration:generate do TypeORM não compara o `where` de índices parciais:
+// ao mudar só o `where` abaixo, escreva a migration à mão.
 export const UNIQUE_ACTIVE_ACCOUNT_INDEX = 'UQ_accounts_user_id_type_active';
 
 @Index(UNIQUE_ACTIVE_ACCOUNT_INDEX, ['userId', 'type'], {
