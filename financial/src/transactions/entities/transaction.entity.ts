@@ -52,6 +52,10 @@ export class Transaction {
   })
   status!: TransactionStatus;
 
+  // motivo exibido ao usuário quando o status é FAILED; vazio nos demais
+  @Column({ name: 'failure_reason', type: 'varchar', nullable: true })
+  failureReason!: string | null;
+
   // id da conta destino — usado em transferências
   @Column({ name: 'target_account_id', nullable: true })
   targetAccountId!: string;
