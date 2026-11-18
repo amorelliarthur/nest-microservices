@@ -5,6 +5,7 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   OneToMany,
+  Index,
 } from 'typeorm';
 import { Transaction } from '../../transactions/entities/transaction.entity';
 
@@ -13,6 +14,14 @@ export enum AccountType {
   SAVINGS = 'SAVINGS',
 }
 
+// no máximo uma conta ativa de cada tipo por usuário, garantido pelo banco
+// (a verificação no service sozinha não impede criações simultâneas)
+export const UNIQUE_ACTIVE_ACCOUNT_INDEX = 'UQ_accounts_user_id_type_active';
+
+@Index(UNIQUE_ACTIVE_ACCOUNT_INDEX, ['userId', 'type'], {
+  unique: true,
+  where: '"active" = true',
+})
 @Entity('accounts') // nome da tabela no banco
 export class Account {
   @PrimaryGeneratedColumn('uuid')
