@@ -21,3 +21,12 @@ export const toJobError = (error: unknown): unknown => {
 // usuário; erros técnicos (banco, rede) não expõem detalhes internos
 export const toFailureReason = (error: unknown): string =>
   isBusinessRuleError(error) ? error.message : GENERIC_FAILURE_REASON;
+
+// Mesma regra do BullMQ para decidir se um job que falhou será repetido.
+// failedAttempts conta a tentativa que acabou de falhar.
+export const willRetry = (
+  failedAttempts: number,
+  attempts: number | undefined,
+  error: unknown,
+): boolean =>
+  !(error instanceof UnrecoverableError) && failedAttempts < (attempts ?? 1);

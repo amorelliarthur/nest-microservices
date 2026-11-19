@@ -10,7 +10,7 @@ import { RedisService } from '../redis/redis.service';
 import { TransactionsService } from '../../transactions/transactions.service';
 import { TRANSACTION_QUEUE } from './queue.service';
 import type { TransactionJobData } from './queue.service';
-import { toFailureReason, toJobError } from './job-error';
+import { toFailureReason, toJobError, willRetry } from './job-error';
 
 @Injectable()
 export class TransactionWorker implements OnModuleInit, OnModuleDestroy {
@@ -40,7 +40,8 @@ export class TransactionWorker implements OnModuleInit, OnModuleDestroy {
           await this.transactionsService.process(transactionId);
         } catch (error) {
           const jobError = toJobError(error);
-          if (this.isLastAttempt(job, jobError)) {
+          // a tentativa atual ainda não foi contada pelo BullMQ
+          if (!willRetry(job.attemptsMade + 1, job.opts.attempts, jobError)) {
             await this.markFailed(transactionId, toFailureReason(error));
           }
           throw jobError;
@@ -50,16 +51,33 @@ export class TransactionWorker implements OnModuleInit, OnModuleDestroy {
       { connection: this.redisService.getConnectionOptions() },
     );
 
-    this.worker.on('failed', (job, err) => {
-      this.logger.error(`Job ${job?.id} failed: ${err.message}`, err.stack);
-    });
+    this.worker.on('failed', (job, err) => this.logFailure(job, err));
   }
 
-  // Mesma regra do BullMQ para decidir se o job será repetido
-  private isLastAttempt(job: Job, jobError: unknown): boolean {
-    return (
-      jobError instanceof UnrecoverableError ||
-      job.attemptsMade + 1 >= (job.opts.attempts ?? 1)
+  // Nova tentativa vira aviso; só a falha definitiva (transação FAILED) é erro.
+  // No evento 'failed' o BullMQ já contou a tentativa que acabou de falhar.
+  private logFailure(job: Job | undefined, err: Error) {
+    if (!job) {
+      this.logger.error(`Job failed: ${err.message}`, err.stack);
+      return;
+    }
+    if (err instanceof UnrecoverableError) {
+      this.logger.error(
+        `Job ${job.id} failed (unrecoverable, no retries): ${err.message}`,
+        err.stack,
+      );
+      return;
+    }
+    const attempt = `attempt ${job.attemptsMade}/${job.opts.attempts ?? 1}`;
+    if (willRetry(job.attemptsMade, job.opts.attempts, err)) {
+      this.logger.warn(
+        `Job ${job.id} failed (${attempt}), will be retried: ${err.message}`,
+      );
+      return;
+    }
+    this.logger.error(
+      `Job ${job.id} failed (${attempt}), no more retries: ${err.message}`,
+      err.stack,
     );
   }
 
