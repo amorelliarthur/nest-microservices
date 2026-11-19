@@ -6,6 +6,7 @@ import {
   TransactionStatus,
 } from '../../src/transactions/entities/transaction.entity';
 import { TransactionsService } from '../../src/transactions/transactions.service';
+import { STALE_PENDING_AFTER_MS } from '../../src/transactions/stale-pending.sweeper';
 import type { QueueService } from '../../src/common/queue/queue.service';
 import type { RabbitMQService } from '../../src/common/rabbitmq/rabbitmq.service';
 
@@ -16,8 +17,6 @@ if (!url || !new URL(url).pathname.endsWith('_test')) {
     'TEST_DATABASE_URL must point to a database whose name ends with "_test"',
   );
 }
-
-const TEN_MINUTES_MS = 10 * 60 * 1000;
 
 describe('TransactionsService.failStalePending (integration)', () => {
   const dataSource = new DataSource({
@@ -81,7 +80,7 @@ describe('TransactionsService.failStalePending (integration)', () => {
     const recente = await insertTransaction(TransactionStatus.PENDING, 9);
     const concluida = await insertTransaction(TransactionStatus.COMPLETED, 60);
 
-    const count = await service.failStalePending(TEN_MINUTES_MS);
+    const count = await service.failStalePending(STALE_PENDING_AFTER_MS);
 
     expect(count).toBe(1);
     expect(await statusOf(antiga)).toBe(TransactionStatus.FAILED);
