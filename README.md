@@ -391,6 +391,8 @@ POST /transactions
   → grava a transação no PostgreSQL com status: 'PENDING'
   → enfileira o job no Redis via BullMQ (o job leva só o id da transação)
   → retorna { transactionId, jobId, status: 'PENDING' } imediatamente
+  → se não conseguir enfileirar: marca como 'FAILED' e responde com o erro; se nem o 'FAILED'
+    for gravado, registra um ERROR e a transação fica para a rotina de PENDING antigas
 
 Background (Worker):
   → pega o job da fila
@@ -406,7 +408,7 @@ Background (Worker):
 Rotina de PENDING antigas (a cada 1 minuto):
   → marca como 'FAILED', com a mensagem genérica, as transações PENDING criadas há mais de 10 minutos
   → cobre o que não passa pelo worker: job travado descartado pelo BullMQ, job perdido no Redis
-    ou banco fora do ar ao gravar o 'FAILED' da última tentativa
+    ou banco fora do ar ao gravar o 'FAILED' (na última tentativa ou depois de falhar o enfileiramento)
   → o saldo não muda: se o worker pegar o job depois, a transação já não está PENDING e é ignorada
   → registra um WARN com a quantidade de transações encerradas
   → o prazo é calculado com o relógio do PostgreSQL, o mesmo que preenche o created_at
