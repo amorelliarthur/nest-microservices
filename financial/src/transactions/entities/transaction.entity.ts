@@ -23,6 +23,11 @@ export enum TransactionStatus {
 
 // Índice composto — acelera buscas por conta + data (extrato)
 @Index(['accountId', 'createdAt'])
+// Índice parcial das PENDING — acelera a rotina que encerra as antigas.
+// O TypeORM não detecta mudanças só no `where`: altere com migration à mão.
+@Index('IDX_transactions_pending_created_at', ['createdAt'], {
+  where: `"status" = 'PENDING'`,
+})
 @Entity('transactions')
 export class Transaction {
   @PrimaryGeneratedColumn('uuid')
