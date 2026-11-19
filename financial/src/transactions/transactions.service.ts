@@ -91,6 +91,29 @@ export class TransactionsService {
     );
   }
 
+  // Encerra as PENDING que nenhum worker concluiu até o prazo (job travado,
+  // perdido no Redis ou FAILED que não chegou a ser gravado). Se um worker
+  // estiver com a transação travada, o UPDATE espera e não altera nada caso
+  // ela tenha sido concluída; se a rotina vier antes, o worker a ignora.
+  // O prazo é calculado com o relógio do banco: created_at é TIMESTAMP sem
+  // fuso, e uma data enviada pelo Node chegaria deslocada pelo fuso do processo.
+  async failStalePending(olderThanMs: number): Promise<number> {
+    const result = await this.transactionRepo
+      .createQueryBuilder()
+      .update(Transaction)
+      .set({
+        status: TransactionStatus.FAILED,
+        failureReason: GENERIC_FAILURE_REASON,
+      })
+      .where('status = :status', { status: TransactionStatus.PENDING })
+      .andWhere(
+        'created_at < now()::timestamp - make_interval(secs => :seconds)',
+        { seconds: olderThanMs / 1000 },
+      )
+      .execute();
+    return result.affected ?? 0;
+  }
+
   // chamado pelo worker em background, com a transação gravada no create()
   async process(transactionId: string): Promise<Transaction> {
     this.assertTransactionId(transactionId);

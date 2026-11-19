@@ -307,6 +307,58 @@ describe('TransactionsService', () => {
     });
   });
 
+  describe('failStalePending()', () => {
+    const setupUpdate = (affected?: number) => {
+      const qb = {
+        update: jest.fn().mockReturnThis(),
+        set: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        execute: jest.fn().mockResolvedValue({ affected }),
+      };
+      mockTransactionRepo.createQueryBuilder.mockReturnValue(qb);
+      return qb;
+    };
+
+    it('deve marcar como FAILED, com mensagem genérica, só as PENDING', async () => {
+      const qb = setupUpdate(2);
+
+      await service.failStalePending(600_000);
+
+      expect(qb.update).toHaveBeenCalledWith(Transaction);
+      expect(qb.set).toHaveBeenCalledWith({
+        status: TransactionStatus.FAILED,
+        failureReason: 'Não foi possível processar a transação',
+      });
+      expect(qb.where).toHaveBeenCalledWith('status = :status', {
+        status: TransactionStatus.PENDING,
+      });
+    });
+
+    it('deve calcular o prazo com o relógio do banco, sem enviar datas do Node', async () => {
+      const qb = setupUpdate(2);
+
+      await service.failStalePending(600_000);
+
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        'created_at < now()::timestamp - make_interval(secs => :seconds)',
+        { seconds: 600 },
+      );
+    });
+
+    it('deve devolver quantas transações foram encerradas', async () => {
+      setupUpdate(2);
+
+      await expect(service.failStalePending(600_000)).resolves.toBe(2);
+    });
+
+    it('deve devolver zero quando o banco não informa as linhas afetadas', async () => {
+      setupUpdate(undefined);
+
+      await expect(service.failStalePending(600_000)).resolves.toBe(0);
+    });
+  });
+
   describe('process()', () => {
     // A transação gravada como PENDING no create(): é ela que o worker processa
     const pendente = (dto: CreateTransactionDto) => ({
