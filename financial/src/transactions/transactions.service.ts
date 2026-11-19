@@ -70,7 +70,7 @@ export class TransactionsService {
       jobId = await this.queueService.enqueueTransaction(transaction.id);
     } catch (err) {
       // sem job, ninguém processaria a transação: ela não pode ficar PENDING
-      await this.markFailed(transaction.id, GENERIC_FAILURE_REASON);
+      await this.markFailedAfterEnqueueError(transaction.id);
       throw err;
     }
 
@@ -80,6 +80,20 @@ export class TransactionsService {
       jobId,
       status: TransactionStatus.PENDING,
     };
+  }
+
+  // Uma falha ao gravar o FAILED não pode esconder o erro do enfileiramento.
+  // A transação fica PENDING, e a rotina de PENDING antigas a encerra depois.
+  private async markFailedAfterEnqueueError(transactionId: string) {
+    try {
+      await this.markFailed(transactionId, GENERIC_FAILURE_REASON);
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      this.logger.error(
+        `Could not mark transaction ${transactionId} as FAILED after an enqueue error: ${error.message}`,
+        error.stack,
+      );
+    }
   }
 
   // Só altera transações ainda PENDING: nunca sobrescreve uma já concluída

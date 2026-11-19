@@ -4,6 +4,7 @@ import { DataSource } from 'typeorm';
 import {
   BadRequestException,
   ForbiddenException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { TransactionsService } from './transactions.service';
@@ -252,6 +253,32 @@ describe('TransactionsService', () => {
           status: TransactionStatus.FAILED,
           failureReason: 'Não foi possível processar a transação',
         },
+      );
+    });
+
+    it('deve relançar o erro do enfileiramento e registrar em log quando também não consegue marcar como FAILED', async () => {
+      mockAccountRepo.findOne.mockResolvedValue({
+        id: 'acc-1',
+        userId: 'user-1',
+        active: true,
+      });
+      const falha = new Error('Redis indisponível');
+      mockQueueService.enqueueTransaction.mockRejectedValue(falha);
+      const falhaAoMarcar = new Error('banco indisponível');
+      mockTransactionRepo.update.mockRejectedValue(falhaAoMarcar);
+      const error = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+      const dto: CreateTransactionDto = {
+        accountId: 'acc-1',
+        type: TransactionType.DEPOSIT,
+        amount: 100,
+      };
+
+      await expect(
+        service.create(dto, { id: 'user-1', role: 'USER' }),
+      ).rejects.toBe(falha);
+      expect(error).toHaveBeenCalledWith(
+        expect.stringMatching(/tx-1.*banco indisponível/),
+        falhaAoMarcar.stack,
       );
     });
 
