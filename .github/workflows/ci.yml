@@ -135,7 +135,7 @@ jobs:
         env:
           POSTGRES_USER: admin
           POSTGRES_PASSWORD: admin
-          POSTGRES_DB: financeiro
+          POSTGRES_DB: financeiro_test
         ports: ['5432:5432']
         options: >-
           --health-cmd pg_isready
@@ -186,7 +186,7 @@ jobs:
           DB_PORT: 5432
           DB_USER: admin
           DB_PASS: admin
-          DB_NAME: financeiro
+          DB_NAME: financeiro_test
 
       - name: Run unit tests
         run: npm run test -- --ci --coverage
@@ -195,10 +195,15 @@ jobs:
           DB_PORT: 5432
           DB_USER: admin
           DB_PASS: admin
-          DB_NAME: financeiro
+          DB_NAME: financeiro_test
           REDIS_HOST: localhost
           REDIS_PORT: 6379
           RABBITMQ_HOST: localhost
+
+      - name: Run integration tests
+        run: npm run test:integration
+        env:
+          TEST_DATABASE_URL: postgres://admin:admin@localhost:5432/financeiro_test
 
   # ---------------------------------------------------------------------
   # GATEWAY
