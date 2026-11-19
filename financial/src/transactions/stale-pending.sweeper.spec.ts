@@ -7,8 +7,6 @@ import {
 } from './stale-pending.sweeper';
 
 describe('StalePendingSweeper', () => {
-  const now = new Date('2026-11-19T12:00:00.000Z');
-
   const setup = () => {
     const service = { failStalePending: jest.fn().mockResolvedValue(0) };
     const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
@@ -32,10 +30,10 @@ describe('StalePendingSweeper', () => {
   it('deve encerrar as PENDING criadas há mais de 10 minutos', async () => {
     const { sweeper, service } = setup();
 
-    await sweeper.sweep(now);
+    await sweeper.sweep();
 
     expect(service.failStalePending).toHaveBeenCalledWith(
-      new Date('2026-11-19T11:50:00.000Z'),
+      STALE_PENDING_AFTER_MS,
     );
   });
 
@@ -43,7 +41,7 @@ describe('StalePendingSweeper', () => {
     const { sweeper, service, warn } = setup();
     service.failStalePending.mockResolvedValue(2);
 
-    await sweeper.sweep(now);
+    await sweeper.sweep();
 
     expect(warn).toHaveBeenCalledWith(
       expect.stringMatching(/2 .*PENDING.*FAILED/),
@@ -53,7 +51,7 @@ describe('StalePendingSweeper', () => {
   it('não deve registrar aviso quando nenhuma transação é encerrada', async () => {
     const { sweeper, warn } = setup();
 
-    await sweeper.sweep(now);
+    await sweeper.sweep();
 
     expect(warn).not.toHaveBeenCalled();
   });
@@ -63,7 +61,7 @@ describe('StalePendingSweeper', () => {
     const falha = new Error('banco indisponível');
     service.failStalePending.mockRejectedValue(falha);
 
-    await expect(sweeper.sweep(now)).resolves.toBeUndefined();
+    await expect(sweeper.sweep()).resolves.toBeUndefined();
     expect(error).toHaveBeenCalledWith(
       expect.stringMatching(/banco indisponível/),
       falha.stack,
@@ -77,8 +75,8 @@ describe('StalePendingSweeper', () => {
       new Promise<number>((resolve) => (terminar = resolve)),
     );
 
-    const primeira = sweeper.sweep(now);
-    await sweeper.sweep(now);
+    const primeira = sweeper.sweep();
+    await sweeper.sweep();
     terminar(0);
     await primeira;
 
@@ -86,7 +84,7 @@ describe('StalePendingSweeper', () => {
   });
 
   it('deve varrer a cada minuto depois de iniciar e parar ao destruir o módulo', async () => {
-    jest.useFakeTimers({ now });
+    jest.useFakeTimers();
     const { sweeper, service } = setup();
 
     sweeper.onModuleInit();

@@ -31,12 +31,13 @@ export class StalePendingSweeper implements OnModuleInit, OnModuleDestroy {
   }
 
   // Nunca lança: um erro aqui derrubaria o processo pelo setInterval
-  async sweep(now: Date = new Date()): Promise<void> {
+  async sweep(): Promise<void> {
     if (this.running) return;
     this.running = true;
     try {
-      const cutoff = new Date(now.getTime() - STALE_PENDING_AFTER_MS);
-      const count = await this.transactionsService.failStalePending(cutoff);
+      const count = await this.transactionsService.failStalePending(
+        STALE_PENDING_AFTER_MS,
+      );
       if (count > 0) {
         this.logger.warn(
           `Marked ${count} stale PENDING transaction(s) as FAILED (pending for more than ${STALE_PENDING_AFTER_MS / 60000} minutes)`,
