@@ -204,6 +204,7 @@ Responsabilidades:
 - Extrato de transações por conta
 - Processamento assíncrono de transações via fila BullMQ + Redis
 - Toda transação fica registrada com seu status (`PENDING`, `COMPLETED` ou `FAILED`); as que falham guardam o motivo, consultável em `GET /transactions/:id`
+- Nenhuma transação fica `PENDING` para sempre: uma rotina encerra como `FAILED` as que continuam pendentes depois de 10 minutos
 
 ## AI Service
 
@@ -402,13 +403,20 @@ Background (Worker):
   → log de cada falha: WARN quando o job ainda será repetido (com a tentativa, ex.: 1/3);
     ERROR só na falha definitiva (regra de negócio, job inválido ou tentativas esgotadas)
 
+Rotina de PENDING antigas (a cada 1 minuto):
+  → marca como 'FAILED', com a mensagem genérica, as transações PENDING criadas há mais de 10 minutos
+  → cobre o que não passa pelo worker: job travado descartado pelo BullMQ, job perdido no Redis
+    ou banco fora do ar ao gravar o 'FAILED' da última tentativa
+  → o saldo não muda: se o worker pegar o job depois, a transação já não está PENDING e é ignorada
+  → registra um WARN com a quantidade de transações encerradas
+
 GET /transactions/:id
   → status da transação e, se 'FAILED', o motivo (failureReason)
 ```
 
-**Limitação conhecida:** o `FAILED` só é gravado quando a falha passa pelo worker. Uma transação pode ficar `PENDING` para sempre se o worker cair no meio do job e o BullMQ descartá-lo como travado, se o job se perder no Redis ou se o banco estiver fora do ar justamente ao gravar o `FAILED` da última tentativa (esse último caso fica registrado no log como erro). Veja a issue #55.
+**Limitação conhecida:** uma transação que não passa pelo worker pode levar até cerca de 11 minutos para virar `FAILED` (o prazo de 10 minutos mais o intervalo da rotina). E, se a fila atrasar a ponto de um job esperar mais de 10 minutos para começar, a transação é encerrada como `FAILED` sem movimentar o saldo, e o pedido precisa ser refeito. A rotina roda em todas as instâncias do serviço; como ela só altera transações `PENDING`, as execuções simultâneas não conflitam. A varredura usa um índice parcial em `created_at` que guarda só as transações `PENDING`.
 
-**Deploy:** aplique a migration antes de subir esta versão. Jobs enfileirados no formato antigo (com a transação inteira no job, sem `transactionId`) são recusados pelo worker sem tocar em nenhuma transação, e o pedido se perde: esvazie a fila antes do deploy.
+**Deploy:** aplique as migrations antes de subir esta versão. Jobs enfileirados no formato antigo (com a transação inteira no job, sem `transactionId`) são recusados pelo worker sem tocar em nenhuma transação, e o pedido se perde: esvazie a fila antes do deploy.
 
 ---
 
@@ -990,7 +998,7 @@ O projeto possui testes unitários com Jest cobrindo a lógica de negócio dos s
 | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `auth`       | Login (sucesso, credenciais inválidas, serviço indisponível), validação de token (válido, ausente, blacklist, inválido), logout, emissão do token interno só com o segredo do gateway, token de serviço no login (audiência separada do token interno)                                                                                                                                                                                                     |
 | `user`       | Criação (novo, CPF/email duplicado, reativação de deletado), validação de CPF (dígitos verificadores, máscara, valores que não são texto), busca por ID com cache (HIT/MISS), autenticação, atualização e remoção (soft delete), token interno nas rotas protegidas (x-user-* ignorados), login só com o token de serviço do auth, falha ao publicar evento no RabbitMQ registrada como erro                                                                                                                                                                                   |
-| `financial`  | Transações (depósito, saque, transferência, saldo insuficiente, gravação como PENDING, FAILED com motivo, job repetido sem movimentar de novo, consulta de status com verificação de dono), contas (criação, conflito de tipo duplicado, busca, desativação), verificação do token interno (chave, algoritmo, emissor, audiência, validade), níveis de log do worker e dos eventos do RabbitMQ (falha de job com nova tentativa como aviso e definitiva como erro, falha de publicação como erro, conta já existente como aviso)                                                                                                                                                                                                   |
+| `financial`  | Transações (depósito, saque, transferência, saldo insuficiente, gravação como PENDING, FAILED com motivo, job repetido sem movimentar de novo, consulta de status com verificação de dono, rotina que encerra as PENDING antigas como FAILED), contas (criação, conflito de tipo duplicado, busca, desativação), verificação do token interno (chave, algoritmo, emissor, audiência, validade), níveis de log do worker e dos eventos do RabbitMQ (falha de job com nova tentativa como aviso e definitiva como erro, falha de publicação como erro, conta já existente como aviso)                                                                                                                                                                                                   |
 | `gateway`    | Rate limiting (incremento, TTL, bloqueio em 429, IP da conexão sem confiar no `x-forwarded-for`), rotas públicas vs protegidas, autenticação (token válido/inválido/ausente, serviço indisponível), descarte de headers internos forjados e repasse só do token interno, bloqueio de `/user/authenticate` (inclusive variações de caixa, barras e encoding)                                                                                                                                                                                  |
 | `ai-service` | Structured output (retry e erro), mapeamento Gemini, classificação de erros do provedor, retry com backoff, fallback de modelo, verificação de dono, tools financeiras (totais em centavos, gastos vs transferências, filtros, truncamento), loop do agente (limite de iterações), e2e com guard, validação e erros 401/400/502/503, token interno no guard e repasse ao financial |
 

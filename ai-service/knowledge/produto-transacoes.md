@@ -14,7 +14,7 @@ O valor mínimo de qualquer transação, seja depósito, saque ou transferência
 
 ## Por que a transação aparece como pendente
 
-As transações são processadas em segundo plano. Ao pedir um depósito, saque ou transferência, o sistema registra a transação e responde imediatamente com o identificador dela e o status "pendente" (PENDING). O processamento é concluído logo depois. Enquanto isso, a transação aparece no extrato como pendente, e o saldo só muda quando ela é concluída (COMPLETED).
+As transações são processadas em segundo plano. Ao pedir um depósito, saque ou transferência, o sistema registra a transação e responde imediatamente com o identificador dela e o status "pendente" (PENDING). O processamento é concluído logo depois. Enquanto isso, a transação aparece no extrato como pendente, e o saldo só muda quando ela é concluída (COMPLETED). Se uma transação continuar pendente por mais de 10 minutos, o sistema a encerra automaticamente com o status "falhou" (FAILED) e o motivo "Não foi possível processar a transação", sem alterar o saldo. Nesse caso, o pedido precisa ser feito de novo.
 
 ## Saldo insuficiente
 
