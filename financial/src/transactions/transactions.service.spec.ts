@@ -276,6 +276,13 @@ describe('TransactionsService', () => {
       await expect(
         service.create(dto, { id: 'user-1', role: 'USER' }),
       ).rejects.toBe(falha);
+      expect(mockTransactionRepo.update).toHaveBeenCalledWith(
+        { id: 'tx-1', status: TransactionStatus.PENDING },
+        {
+          status: TransactionStatus.FAILED,
+          failureReason: 'Não foi possível processar a transação',
+        },
+      );
       expect(error).toHaveBeenCalledWith(
         expect.stringMatching(/tx-1.*banco indisponível/),
         falhaAoMarcar.stack,
