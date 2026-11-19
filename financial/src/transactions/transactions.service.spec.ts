@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
+import { DataSource, LessThan } from 'typeorm';
 import {
   BadRequestException,
   ForbiddenException,
@@ -304,6 +304,36 @@ describe('TransactionsService', () => {
         service.markFailed(undefined as unknown as string, 'x'),
       ).rejects.toThrow();
       expect(mockTransactionRepo.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('failStalePending()', () => {
+    const cutoff = new Date('2026-11-19T12:00:00.000Z');
+
+    it('deve marcar como FAILED, com mensagem genérica, só as PENDING criadas antes do prazo', async () => {
+      mockTransactionRepo.update.mockResolvedValue({ affected: 2 });
+
+      await service.failStalePending(cutoff);
+
+      expect(mockTransactionRepo.update).toHaveBeenCalledWith(
+        { status: TransactionStatus.PENDING, createdAt: LessThan(cutoff) },
+        {
+          status: TransactionStatus.FAILED,
+          failureReason: 'Não foi possível processar a transação',
+        },
+      );
+    });
+
+    it('deve devolver quantas transações foram encerradas', async () => {
+      mockTransactionRepo.update.mockResolvedValue({ affected: 2 });
+
+      await expect(service.failStalePending(cutoff)).resolves.toBe(2);
+    });
+
+    it('deve devolver zero quando o banco não informa as linhas afetadas', async () => {
+      mockTransactionRepo.update.mockResolvedValue({});
+
+      await expect(service.failStalePending(cutoff)).resolves.toBe(0);
     });
   });
 

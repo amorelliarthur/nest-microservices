@@ -6,7 +6,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
+import { Repository, DataSource, LessThan } from 'typeorm';
 import {
   Transaction,
   TransactionStatus,
@@ -89,6 +89,21 @@ export class TransactionsService {
       { id: transactionId, status: TransactionStatus.PENDING },
       { status: TransactionStatus.FAILED, failureReason: reason },
     );
+  }
+
+  // Encerra as PENDING que nenhum worker concluiu até o prazo (job travado,
+  // perdido no Redis ou FAILED que não chegou a ser gravado). Se um worker
+  // estiver com a transação travada, o UPDATE espera e não altera nada caso
+  // ela tenha sido concluída; se a rotina vier antes, o worker a ignora.
+  async failStalePending(cutoff: Date): Promise<number> {
+    const result = await this.transactionRepo.update(
+      { status: TransactionStatus.PENDING, createdAt: LessThan(cutoff) },
+      {
+        status: TransactionStatus.FAILED,
+        failureReason: GENERIC_FAILURE_REASON,
+      },
+    );
+    return result.affected ?? 0;
   }
 
   // chamado pelo worker em background, com a transação gravada no create()
