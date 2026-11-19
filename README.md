@@ -409,6 +409,8 @@ Rotina de PENDING antigas (a cada 1 minuto):
     ou banco fora do ar ao gravar o 'FAILED' da última tentativa
   → o saldo não muda: se o worker pegar o job depois, a transação já não está PENDING e é ignorada
   → registra um WARN com a quantidade de transações encerradas
+  → o prazo é calculado com o relógio do PostgreSQL, o mesmo que preenche o created_at
+    (TIMESTAMP sem fuso), e não muda com o fuso do servidor do financial
 
 GET /transactions/:id
   → status da transação e, se 'FAILED', o motivo (failureReason)
@@ -621,7 +623,13 @@ Os dados de PostgreSQL, MongoDB, Redis e RabbitMQ ficam em volumes nomeados
 O PostgreSQL usa a imagem `pgvector/pgvector`, que já traz a extensão de vetores
 usada pelo RAG do ai-service. Na primeira inicialização, com o volume vazio, os
 scripts de `postgres/init` criam o banco `ai` do ai-service, ao lado do
-`financeiro`.
+`financeiro`, e os bancos descartáveis dos testes de integração (`ai_test` e
+`financeiro_test`). Num volume que já existia, esses scripts não rodam de novo;
+crie o banco que faltar sem apagar nada:
+
+```bash
+docker compose exec postgres psql -U admin -d postgres -c "CREATE DATABASE financeiro_test"
+```
 
 Para apagar tudo e começar do zero:
 
@@ -998,7 +1006,7 @@ O projeto possui testes unitários com Jest cobrindo a lógica de negócio dos s
 | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `auth`       | Login (sucesso, credenciais inválidas, serviço indisponível), validação de token (válido, ausente, blacklist, inválido), logout, emissão do token interno só com o segredo do gateway, token de serviço no login (audiência separada do token interno)                                                                                                                                                                                                     |
 | `user`       | Criação (novo, CPF/email duplicado, reativação de deletado), validação de CPF (dígitos verificadores, máscara, valores que não são texto), busca por ID com cache (HIT/MISS), autenticação, atualização e remoção (soft delete), token interno nas rotas protegidas (x-user-* ignorados), login só com o token de serviço do auth, falha ao publicar evento no RabbitMQ registrada como erro                                                                                                                                                                                   |
-| `financial`  | Transações (depósito, saque, transferência, saldo insuficiente, gravação como PENDING, FAILED com motivo, job repetido sem movimentar de novo, consulta de status com verificação de dono, rotina que encerra as PENDING antigas como FAILED), contas (criação, conflito de tipo duplicado, busca, desativação), verificação do token interno (chave, algoritmo, emissor, audiência, validade), níveis de log do worker e dos eventos do RabbitMQ (falha de job com nova tentativa como aviso e definitiva como erro, falha de publicação como erro, conta já existente como aviso)                                                                                                                                                                                                   |
+| `financial`  | Transações (depósito, saque, transferência, saldo insuficiente, gravação como PENDING, FAILED com motivo, job repetido sem movimentar de novo, consulta de status com verificação de dono, rotina que encerra as PENDING antigas como FAILED, com teste de integração no PostgreSQL num fuso à frente de UTC), contas (criação, conflito de tipo duplicado, busca, desativação), verificação do token interno (chave, algoritmo, emissor, audiência, validade), níveis de log do worker e dos eventos do RabbitMQ (falha de job com nova tentativa como aviso e definitiva como erro, falha de publicação como erro, conta já existente como aviso)                                                                                                                                                                                                   |
 | `gateway`    | Rate limiting (incremento, TTL, bloqueio em 429, IP da conexão sem confiar no `x-forwarded-for`), rotas públicas vs protegidas, autenticação (token válido/inválido/ausente, serviço indisponível), descarte de headers internos forjados e repasse só do token interno, bloqueio de `/user/authenticate` (inclusive variações de caixa, barras e encoding)                                                                                                                                                                                  |
 | `ai-service` | Structured output (retry e erro), mapeamento Gemini, classificação de erros do provedor, retry com backoff, fallback de modelo, verificação de dono, tools financeiras (totais em centavos, gastos vs transferências, filtros, truncamento), loop do agente (limite de iterações), e2e com guard, validação e erros 401/400/502/503, token interno no guard e repasse ao financial |
 
@@ -1017,6 +1025,15 @@ Rodar os testes e2e do ai-service:
 cd ai-service
 npm run test:e2e
 ```
+
+Rodar os testes de integração do financial (contra o PostgreSQL real, no banco `financeiro_test`; os testes recusam bancos cujo nome não termine em `_test` e aplicam as migrations sozinhos):
+
+```bash
+cd financial
+TEST_DATABASE_URL=postgres://admin:admin@localhost:5432/financeiro_test npm run test:integration
+```
+
+Esses testes rodam com o processo no fuso `Asia/Tokyo`, à frente de UTC, para pegar erros de fuso entre o Node e as colunas `TIMESTAMP` sem fuso do banco.
 
 Rodar um arquivo de teste específico:
 
