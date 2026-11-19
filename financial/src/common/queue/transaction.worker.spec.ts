@@ -63,6 +63,81 @@ describe('TransactionWorker', () => {
     );
   });
 
+  describe('ao registrar a falha de um job', () => {
+    const setup = () => {
+      const handlers: Record<string, (...args: unknown[]) => void> = {};
+      (Worker as unknown as jest.Mock).mockImplementation(() => ({
+        on: (event: string, handler: (...args: unknown[]) => void) => {
+          handlers[event] = handler;
+        },
+        close: jest.fn(),
+      }));
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+      const error = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+      new TransactionWorker(
+        { getConnectionOptions: () => ({}) } as unknown as RedisService,
+        {} as TransactionsService,
+      ).onModuleInit();
+      // no evento 'failed' o BullMQ já contou a tentativa que falhou
+      const job = (attemptsMade: number) => ({
+        id: '7',
+        attemptsMade,
+        opts: { attempts: 3 },
+      });
+      return { failed: handlers['failed'], warn, error, job };
+    };
+
+    it('deve registrar como aviso uma falha temporária que ainda será repetida', () => {
+      const { failed, warn, error, job } = setup();
+
+      failed(job(1), new Error('connect ECONNREFUSED'));
+
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringMatching(/7.*1\/3.*will be retried.*ECONNREFUSED/),
+      );
+      expect(error).not.toHaveBeenCalled();
+    });
+
+    it('deve registrar como erro a falha da última tentativa', () => {
+      const { failed, warn, error, job } = setup();
+      const falha = new Error('connect ECONNREFUSED');
+
+      failed(job(3), falha);
+
+      expect(error).toHaveBeenCalledWith(
+        expect.stringMatching(/7.*3\/3.*no more retries.*ECONNREFUSED/),
+        falha.stack,
+      );
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it('deve registrar como erro definitivo um UnrecoverableError, mesmo com tentativas sobrando', () => {
+      const { failed, warn, error, job } = setup();
+      const falha = new UnrecoverableError('Saldo insuficiente');
+
+      failed(job(1), falha);
+
+      expect(error).toHaveBeenCalledWith(
+        expect.stringMatching(/7.*unrecoverable.*Saldo insuficiente/),
+        falha.stack,
+      );
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it('deve registrar como erro uma falha sem o job', () => {
+      const { failed, warn, error } = setup();
+      const falha = new Error('lock perdido');
+
+      failed(undefined, falha);
+
+      expect(error).toHaveBeenCalledWith(
+        expect.stringMatching(/lock perdido/),
+        falha.stack,
+      );
+      expect(warn).not.toHaveBeenCalled();
+    });
+  });
+
   it.each([
     [
       'sem transactionId (formato antigo)',

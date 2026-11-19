@@ -50,9 +50,35 @@ export class TransactionWorker implements OnModuleInit, OnModuleDestroy {
       { connection: this.redisService.getConnectionOptions() },
     );
 
-    this.worker.on('failed', (job, err) => {
-      this.logger.error(`Job ${job?.id} failed: ${err.message}`, err.stack);
-    });
+    this.worker.on('failed', (job, err) => this.logFailure(job, err));
+  }
+
+  // Nova tentativa vira aviso; só a falha definitiva (transação FAILED) é erro.
+  // No evento 'failed' o BullMQ já contou a tentativa que acabou de falhar.
+  private logFailure(job: Job | undefined, err: Error) {
+    if (!job) {
+      this.logger.error(`Job failed: ${err.message}`, err.stack);
+      return;
+    }
+    if (err instanceof UnrecoverableError) {
+      this.logger.error(
+        `Job ${job.id} failed (unrecoverable, no retries): ${err.message}`,
+        err.stack,
+      );
+      return;
+    }
+    const attempts = job.opts?.attempts ?? 1;
+    const attempt = `attempt ${job.attemptsMade}/${attempts}`;
+    if (job.attemptsMade < attempts) {
+      this.logger.warn(
+        `Job ${job.id} failed (${attempt}), will be retried: ${err.message}`,
+      );
+      return;
+    }
+    this.logger.error(
+      `Job ${job.id} failed (${attempt}), no more retries: ${err.message}`,
+      err.stack,
+    );
   }
 
   // Mesma regra do BullMQ para decidir se o job será repetido
