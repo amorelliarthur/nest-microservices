@@ -682,6 +682,16 @@ describe('TransactionsService', () => {
       await expect(promise).rejects.toThrow('Transação não encontrada');
     });
 
+    it('deve responder 404 de transação quando a conta dela não existe mais', async () => {
+      mockTransactionRepo.findOne.mockResolvedValue(transacao);
+      mockAccountRepo.findOne.mockResolvedValue(null);
+
+      const promise = service.findById('tx-1', { id: 'user-1', role: 'USER' });
+
+      await expect(promise).rejects.toThrow(NotFoundException);
+      await expect(promise).rejects.toThrow('Transação não encontrada');
+    });
+
     it('deve lançar NotFoundException quando a transação não existe', async () => {
       mockTransactionRepo.findOne.mockResolvedValue(null);
 

@@ -261,9 +261,7 @@ export class TransactionsService {
       where: { id: transaction.accountId },
     });
     // transação de outro usuário responde igual a uma inexistente
-    if (!account || !canAccess(requester, account.userId)) {
-      throw new NotFoundException('Transação não encontrada');
-    }
+    assertAccountAccess(account, requester, 'Transação não encontrada');
     return transaction;
   }
 
