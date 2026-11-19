@@ -5,6 +5,7 @@ import { Transaction } from './entities/transaction.entity';
 import { Account } from '../accounts/entities/account.entity';
 import { TransactionsController } from './transactions.controller';
 import { TransactionsService } from './transactions.service';
+import { StalePendingSweeper } from './stale-pending.sweeper';
 import { QueueService } from '../common/queue/queue.service';
 import { TransactionWorker } from '../common/queue/transaction.worker';
 import { RedisService } from '../common/redis/redis.service';
@@ -21,6 +22,7 @@ import { RabbitMQService } from '../common/rabbitmq/rabbitmq.service';
     TransactionsService,
     QueueService,
     TransactionWorker,
+    StalePendingSweeper,
     RedisService,
     RabbitMQService,
   ],
