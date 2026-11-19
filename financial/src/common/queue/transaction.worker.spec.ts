@@ -38,31 +38,6 @@ describe('TransactionWorker', () => {
     );
   });
 
-  it('deve registrar a falha de um job como erro no Logger', () => {
-    const handlers: Record<string, (...args: unknown[]) => void> = {};
-    (Worker as unknown as jest.Mock).mockImplementation(() => ({
-      on: (event: string, handler: (...args: unknown[]) => void) => {
-        handlers[event] = handler;
-      },
-      close: jest.fn(),
-    }));
-    const error = jest.spyOn(Logger.prototype, 'error').mockImplementation();
-
-    const worker = new TransactionWorker(
-      { getConnectionOptions: () => ({}) } as unknown as RedisService,
-      {} as TransactionsService,
-    );
-    worker.onModuleInit();
-
-    const failure = new Error('saldo insuficiente');
-    handlers['failed']({ id: '42' }, failure);
-
-    expect(error).toHaveBeenCalledWith(
-      expect.stringMatching(/42.*saldo insuficiente/),
-      failure.stack,
-    );
-  });
-
   describe('ao registrar a falha de um job', () => {
     const setup = () => {
       const handlers: Record<string, (...args: unknown[]) => void> = {};
@@ -119,6 +94,19 @@ describe('TransactionWorker', () => {
 
       expect(error).toHaveBeenCalledWith(
         expect.stringMatching(/7.*unrecoverable.*Saldo insuficiente/),
+        falha.stack,
+      );
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it('deve registrar como erro a falha de um job sem attempts, que tem uma única tentativa', () => {
+      const { failed, warn, error } = setup();
+      const falha = new Error('connect ECONNREFUSED');
+
+      failed({ id: '42', attemptsMade: 1, opts: {} }, falha);
+
+      expect(error).toHaveBeenCalledWith(
+        expect.stringMatching(/42.*1\/1.*no more retries.*ECONNREFUSED/),
         falha.stack,
       );
       expect(warn).not.toHaveBeenCalled();

@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { UnrecoverableError } from 'bullmq';
-import { toFailureReason, toJobError } from './job-error';
+import { toFailureReason, toJobError, willRetry } from './job-error';
 
 describe('toJobError()', () => {
   it('deve tornar saldo insuficiente (400) definitivo, sem novas tentativas', () => {
@@ -47,5 +47,28 @@ describe('toFailureReason()', () => {
     expect(
       toFailureReason(new InternalServerErrorException('falha interna')),
     ).toBe('Não foi possível processar a transação');
+  });
+});
+
+describe('willRetry()', () => {
+  it('deve repetir um erro temporário enquanto houver tentativas', () => {
+    expect(willRetry(1, 3, new Error('connect ECONNREFUSED'))).toBe(true);
+    expect(willRetry(2, 3, new Error('connect ECONNREFUSED'))).toBe(true);
+  });
+
+  it('não deve repetir quando a tentativa que falhou foi a última', () => {
+    expect(willRetry(3, 3, new Error('connect ECONNREFUSED'))).toBe(false);
+  });
+
+  it('não deve repetir um UnrecoverableError, mesmo com tentativas sobrando', () => {
+    expect(willRetry(1, 3, new UnrecoverableError('Saldo insuficiente'))).toBe(
+      false,
+    );
+  });
+
+  it('deve considerar uma única tentativa quando o job não define attempts', () => {
+    expect(willRetry(1, undefined, new Error('connect ECONNREFUSED'))).toBe(
+      false,
+    );
   });
 });
