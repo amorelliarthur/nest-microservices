@@ -400,7 +400,7 @@ Background (Worker):
   → falha temporária (banco, rede): tenta mais 2 vezes (backoff exponencial: 1s, 2s);
     esgotadas as tentativas, 'FAILED' com a mensagem genérica "Não foi possível processar a transação"
   → log de cada falha: WARN quando o job ainda será repetido (com a tentativa, ex.: 1/3);
-    ERROR só na falha definitiva (regra de negócio ou tentativas esgotadas)
+    ERROR só na falha definitiva (regra de negócio, job inválido ou tentativas esgotadas)
 
 GET /transactions/:id
   → status da transação e, se 'FAILED', o motivo (failureReason)
