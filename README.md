@@ -410,7 +410,8 @@ Rotina de PENDING antigas (a cada 1 minuto):
   → o saldo não muda: se o worker pegar o job depois, a transação já não está PENDING e é ignorada
   → registra um WARN com a quantidade de transações encerradas
   → o prazo é calculado com o relógio do PostgreSQL, o mesmo que preenche o created_at
-    (TIMESTAMP sem fuso), e não muda com o fuso do servidor do financial
+    (TIMESTAMP sem fuso), e não muda com o fuso do servidor do financial; ele depende de o
+    timezone do PostgreSQL continuar o mesmo (UTC, sem horário de verão)
 
 GET /transactions/:id
   → status da transação e, se 'FAILED', o motivo (failureReason)
