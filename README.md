@@ -411,9 +411,9 @@ Rotina de PENDING antigas (a cada 1 minuto):
     ou banco fora do ar ao gravar o 'FAILED' (na última tentativa ou depois de falhar o enfileiramento)
   → o saldo não muda: se o worker pegar o job depois, a transação já não está PENDING e é ignorada
   → registra um WARN com a quantidade de transações encerradas
-  → o prazo é calculado com o relógio do PostgreSQL, o mesmo que preenche o created_at
-    (TIMESTAMP sem fuso), e não muda com o fuso do servidor do financial; ele depende de o
-    timezone do PostgreSQL continuar o mesmo (UTC, sem horário de verão)
+  → o prazo é calculado com o relógio do PostgreSQL, o mesmo que preenche o created_at;
+    como a coluna guarda o instante (timestamptz), o prazo não muda com o fuso do servidor
+    do financial nem com o timezone do PostgreSQL
 
 GET /transactions/:id
   → status da transação e, se 'FAILED', o motivo (failureReason)
@@ -422,6 +422,8 @@ GET /transactions/:id
 **Limitação conhecida:** uma transação que não passa pelo worker pode levar até cerca de 11 minutos para virar `FAILED` (o prazo de 10 minutos mais o intervalo da rotina). E, se a fila atrasar a ponto de um job esperar mais de 10 minutos para começar, a transação é encerrada como `FAILED` sem movimentar o saldo, e o pedido precisa ser refeito. A rotina roda em todas as instâncias do serviço; como ela só altera transações `PENDING`, as execuções simultâneas não conflitam. A varredura usa um índice parcial em `created_at` que guarda só as transações `PENDING`.
 
 **Deploy:** aplique as migrations antes de subir esta versão. Jobs enfileirados no formato antigo (com a transação inteira no job, sem `transactionId`) são recusados pelo worker sem tocar em nenhuma transação, e o pedido se perde: esvazie a fila antes do deploy.
+
+**Datas com fuso:** a migration que passa `created_at` e `updated_at` para `timestamptz` converte as datas existentes como UTC, o fuso em que o PostgreSQL as gravou. Ela só roda com a sessão em UTC (fora disso, aborta sem alterar nada) e, assim, apenas troca o tipo da coluna, sem reescrever a tabela.
 
 ---
 
@@ -1009,7 +1011,7 @@ O projeto possui testes unitários com Jest cobrindo a lógica de negócio dos s
 | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `auth`       | Login (sucesso, credenciais inválidas, serviço indisponível), validação de token (válido, ausente, blacklist, inválido), logout, emissão do token interno só com o segredo do gateway, token de serviço no login (audiência separada do token interno)                                                                                                                                                                                                     |
 | `user`       | Criação (novo, CPF/email duplicado, reativação de deletado), validação de CPF (dígitos verificadores, máscara, valores que não são texto), busca por ID com cache (HIT/MISS), autenticação, atualização e remoção (soft delete), token interno nas rotas protegidas (x-user-* ignorados), login só com o token de serviço do auth, falha ao publicar evento no RabbitMQ registrada como erro                                                                                                                                                                                   |
-| `financial`  | Transações (depósito, saque, transferência, saldo insuficiente, gravação como PENDING, FAILED com motivo, job repetido sem movimentar de novo, consulta de status com verificação de dono, rotina que encerra as PENDING antigas como FAILED, com teste de integração no PostgreSQL num fuso à frente de UTC), contas (criação, conflito de tipo duplicado, busca, desativação), verificação do token interno (chave, algoritmo, emissor, audiência, validade), níveis de log do worker e dos eventos do RabbitMQ (falha de job com nova tentativa como aviso e definitiva como erro, falha de publicação como erro, conta já existente como aviso), e2e subindo a aplicação inteira (métricas, rota protegida recusada sem token interno e liberada com ele)                                                                                                                                                                                                   |
+| `financial`  | Transações (depósito, saque, transferência, saldo insuficiente, gravação como PENDING, FAILED com motivo, job repetido sem movimentar de novo, consulta de status com verificação de dono, rotina que encerra as PENDING antigas como FAILED, com teste de integração no PostgreSQL num fuso à frente de UTC, inclusive com a sessão do PostgreSQL em outro fuso), datas (`createdAt`, `updatedAt`) lidas como o instante gravado com o processo fora de UTC, migration para `timestamptz` recusada numa sessão fora de UTC, contas (criação, conflito de tipo duplicado, busca, desativação), verificação do token interno (chave, algoritmo, emissor, audiência, validade), níveis de log do worker e dos eventos do RabbitMQ (falha de job com nova tentativa como aviso e definitiva como erro, falha de publicação como erro, conta já existente como aviso), e2e subindo a aplicação inteira (métricas, rota protegida recusada sem token interno e liberada com ele)                                                                                                                                                                                                   |
 | `gateway`    | Rate limiting (incremento, TTL, bloqueio em 429, IP da conexão sem confiar no `x-forwarded-for`), rotas públicas vs protegidas, autenticação (token válido/inválido/ausente, serviço indisponível), descarte de headers internos forjados e repasse só do token interno, bloqueio de `/user/authenticate` (inclusive variações de caixa, barras e encoding)                                                                                                                                                                                  |
 | `ai-service` | Structured output (retry e erro), mapeamento Gemini, classificação de erros do provedor, retry com backoff, fallback de modelo, verificação de dono, tools financeiras (totais em centavos, gastos vs transferências, filtros, truncamento), loop do agente (limite de iterações), e2e com guard, validação e erros 401/400/502/503, token interno no guard e repasse ao financial |
 
@@ -1036,7 +1038,7 @@ cd financial
 TEST_DATABASE_URL=postgres://admin:admin@localhost:5432/financeiro_test npm run test:integration
 ```
 
-Esses testes rodam com o processo no fuso `Asia/Tokyo`, à frente de UTC, para pegar erros de fuso entre o Node e as colunas `TIMESTAMP` sem fuso do banco.
+Esses testes rodam com o processo no fuso `Asia/Tokyo`, à frente de UTC, para pegar erros de fuso entre o Node e o banco: as datas (`created_at`, `updated_at`) são `timestamptz` e precisam ser lidas como o mesmo instante gravado, em qualquer fuso do processo ou do PostgreSQL.
 
 Rodar os testes e2e do financial (sobem a aplicação inteira no banco `financeiro_test` e aplicam as migrations sozinhos; o worker, a fila, o RabbitMQ e a rotina de PENDING antigas são trocados por stubs, então só o PostgreSQL é necessário):
 
