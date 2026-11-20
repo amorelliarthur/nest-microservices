@@ -65,6 +65,6 @@ export class Transaction {
   @Column({ name: 'target_account_id', nullable: true })
   targetAccountId!: string;
 
-  @CreateDateColumn({ name: 'created_at' })
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
 }

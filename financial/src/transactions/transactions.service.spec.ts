@@ -375,7 +375,7 @@ describe('TransactionsService', () => {
       await service.failStalePending(600_000);
 
       expect(qb.andWhere).toHaveBeenCalledWith(
-        'created_at < now()::timestamp - make_interval(secs => :seconds)',
+        'created_at < now() - make_interval(secs => :seconds)',
         { seconds: 600 },
       );
     });
