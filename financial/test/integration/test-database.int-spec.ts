@@ -1,25 +1,22 @@
-import { assertTestDatabase } from './test-database';
+import { assertTestDatabase, assertTestDatabaseName } from './test-database';
 
-const testUrl = process.env.TEST_DATABASE_URL as string;
-
-// Mesmo servidor, outro banco: a consulta só lê, nada é gravado
-const urlForDatabase = (database: string) => {
-  const url = new URL(testUrl);
-  url.pathname = `/${database}`;
-  return url.toString();
-};
-
-describe('assertTestDatabase (integration)', () => {
-  it('deve aceitar o banco de testes', async () => {
-    await expect(assertTestDatabase(testUrl)).resolves.toBeUndefined();
+describe('assertTestDatabaseName', () => {
+  it('deve aceitar um nome que termina em _test', () => {
+    expect(() => assertTestDatabaseName('financeiro_test')).not.toThrow();
   });
 
-  it('deve recusar um banco conectado cujo nome não termina em _test', async () => {
-    await expect(
-      assertTestDatabase(urlForDatabase('postgres')),
-    ).rejects.toThrow(
-      'Connected database "postgres" does not end with "_test"',
+  it('deve recusar um nome que não termina em _test', () => {
+    expect(() => assertTestDatabaseName('financeiro')).toThrow(
+      'Connected database "financeiro" does not end with "_test"',
     );
+  });
+});
+
+describe('assertTestDatabase (integration)', () => {
+  it('deve aceitar o banco de testes conectado', async () => {
+    await expect(
+      assertTestDatabase(process.env.TEST_DATABASE_URL),
+    ).resolves.toBeUndefined();
   });
 
   it('deve recusar quando a URL não foi informada', async () => {

@@ -1,5 +1,11 @@
 import { Client } from 'pg';
 
+export const assertTestDatabaseName = (name: string): void => {
+  if (!name.endsWith('_test')) {
+    throw new Error(`Connected database "${name}" does not end with "_test"`);
+  }
+};
+
 // Integration tests truncate tables: they only run on a database whose name
 // ends with _test. The name comes from the server after connecting, because
 // the URL can point to another database (e.g. a socket with ?db=) without
@@ -17,10 +23,7 @@ export const assertTestDatabase = async (
     const { rows } = await client.query<{ name: string }>(
       'SELECT current_database() AS name',
     );
-    const name = rows[0].name;
-    if (!name.endsWith('_test')) {
-      throw new Error(`Connected database "${name}" does not end with "_test"`);
-    }
+    assertTestDatabaseName(rows[0].name);
   } finally {
     await client.end();
   }

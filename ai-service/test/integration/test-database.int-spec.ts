@@ -1,25 +1,22 @@
-import { assertTestDatabase } from './test-database';
+import { assertTestDatabase, assertTestDatabaseName } from './test-database';
 
-const testUrl = process.env.TEST_DATABASE_URL as string;
-
-// Same server, another database: the query only reads, nothing is written
-const urlForDatabase = (database: string) => {
-  const url = new URL(testUrl);
-  url.pathname = `/${database}`;
-  return url.toString();
-};
-
-describe('assertTestDatabase (integration)', () => {
-  it('accepts the test database', async () => {
-    await expect(assertTestDatabase(testUrl)).resolves.toBeUndefined();
+describe('assertTestDatabaseName', () => {
+  it('accepts a name ending with _test', () => {
+    expect(() => assertTestDatabaseName('ai_test')).not.toThrow();
   });
 
-  it('rejects a connected database whose name does not end with _test', async () => {
-    await expect(
-      assertTestDatabase(urlForDatabase('postgres')),
-    ).rejects.toThrow(
-      'Connected database "postgres" does not end with "_test"',
+  it('rejects a name that does not end with _test', () => {
+    expect(() => assertTestDatabaseName('ai')).toThrow(
+      'Connected database "ai" does not end with "_test"',
     );
+  });
+});
+
+describe('assertTestDatabase (integration)', () => {
+  it('accepts the connected test database', async () => {
+    await expect(
+      assertTestDatabase(process.env.TEST_DATABASE_URL),
+    ).resolves.toBeUndefined();
   });
 
   it('rejects when the URL is not set', async () => {
