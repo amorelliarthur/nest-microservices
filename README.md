@@ -1029,7 +1029,7 @@ cd ai-service
 npm run test:e2e
 ```
 
-Rodar os testes de integração do financial (contra o PostgreSQL real, no banco `financeiro_test`; os testes recusam bancos cujo nome não termine em `_test` e aplicam as migrations sozinhos):
+Rodar os testes de integração do financial (contra o PostgreSQL real, no banco `financeiro_test`; os testes aplicam as migrations sozinhos):
 
 ```bash
 cd financial
@@ -1037,6 +1037,16 @@ TEST_DATABASE_URL=postgres://admin:admin@localhost:5432/financeiro_test npm run 
 ```
 
 Esses testes rodam com o processo no fuso `Asia/Tokyo`, à frente de UTC, para pegar erros de fuso entre o Node e as colunas `TIMESTAMP` sem fuso do banco.
+
+Rodar os testes de integração do ai-service (contra o PostgreSQL real, no banco `ai_test`; as migrations são aplicadas antes, como no CI):
+
+```bash
+cd ai-service
+DATABASE_URL=postgres://admin:admin@localhost:5432/ai_test npm run migrate:up
+TEST_DATABASE_URL=postgres://admin:admin@localhost:5432/ai_test npm run test:integration
+```
+
+Os testes de integração apagam dados, então, nos dois serviços, só rodam num banco cujo nome termina em `_test`. Antes de qualquer teste, o `globalSetup` conecta e confere o nome do banco realmente conectado (`SELECT current_database()`), não o nome escrito na URL: uma URL de socket com `?db=` apontando para outro banco também é recusada.
 
 Rodar um arquivo de teste específico:
 
