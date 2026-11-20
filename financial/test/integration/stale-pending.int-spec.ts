@@ -10,13 +10,8 @@ import { STALE_PENDING_AFTER_MS } from '../../src/transactions/stale-pending.swe
 import type { QueueService } from '../../src/common/queue/queue.service';
 import type { RabbitMQService } from '../../src/common/rabbitmq/rabbitmq.service';
 
+// O global-setup já conferiu que o banco conectado termina em _test
 const url = process.env.TEST_DATABASE_URL;
-// Os testes apagam as tabelas: só rodam num banco cujo nome termina em _test
-if (!url || !new URL(url).pathname.endsWith('_test')) {
-  throw new Error(
-    'TEST_DATABASE_URL must point to a database whose name ends with "_test"',
-  );
-}
 
 describe('TransactionsService.failStalePending (integration)', () => {
   const dataSource = new DataSource({

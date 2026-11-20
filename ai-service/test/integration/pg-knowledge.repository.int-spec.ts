@@ -2,13 +2,8 @@ import { Pool } from 'pg';
 import type { ChunkToStore } from '../../src/knowledge/domain/knowledge-repository.port';
 import { PgKnowledgeRepository } from '../../src/knowledge/infra/pg-knowledge.repository';
 
+// global-setup already checked that the connected database ends with _test
 const url = process.env.TEST_DATABASE_URL;
-// Os testes apagam a tabela: só rodam num banco cujo nome termina em _test
-if (!url || !new URL(url).pathname.endsWith('_test')) {
-  throw new Error(
-    'TEST_DATABASE_URL must point to a database whose name ends with "_test"',
-  );
-}
 
 const DIMENSIONS = 768;
 const vector = (value: number) =>
