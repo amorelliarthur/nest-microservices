@@ -82,4 +82,39 @@ describe('TransactionsService.failStalePending (integration)', () => {
     expect(await statusOf(recente)).toBe(TransactionStatus.PENDING);
     expect(await statusOf(concluida)).toBe(TransactionStatus.COMPLETED);
   });
+
+  it('deve manter o prazo quando o fuso do PostgreSQL muda depois da gravação', async () => {
+    const antiga = await insertTransaction(TransactionStatus.PENDING, 11);
+    const recente = await insertTransaction(TransactionStatus.PENDING, 9);
+
+    // Mesmas linhas, lidas por uma sessão com outro timezone
+    const otherTimezone = new DataSource({
+      type: 'postgres',
+      url,
+      entities: [Account, Transaction],
+      extra: { options: '-c timezone=Asia/Tokyo' },
+    });
+    await otherTimezone.initialize();
+    try {
+      const rows: { TimeZone: string }[] =
+        await otherTimezone.query('SHOW timezone');
+      expect(rows[0].TimeZone).toBe('Asia/Tokyo');
+
+      const otherService = new TransactionsService(
+        otherTimezone.getRepository(Transaction),
+        otherTimezone.getRepository(Account),
+        otherTimezone,
+        {} as QueueService,
+        {} as RabbitMQService,
+      );
+
+      const count = await otherService.failStalePending(STALE_PENDING_AFTER_MS);
+
+      expect(count).toBe(1);
+    } finally {
+      await otherTimezone.destroy();
+    }
+    expect(await statusOf(antiga)).toBe(TransactionStatus.FAILED);
+    expect(await statusOf(recente)).toBe(TransactionStatus.PENDING);
+  });
 });

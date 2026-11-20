@@ -109,8 +109,9 @@ export class TransactionsService {
   // perdido no Redis ou FAILED que não chegou a ser gravado). Se um worker
   // estiver com a transação travada, o UPDATE espera e não altera nada caso
   // ela tenha sido concluída; se a rotina vier antes, o worker a ignora.
-  // O prazo é calculado com o relógio do banco: created_at é TIMESTAMP sem
-  // fuso, e uma data enviada pelo Node chegaria deslocada pelo fuso do processo.
+  // O prazo é calculado com o relógio do banco, o mesmo que preenche o
+  // created_at. Como a coluna é timestamptz, a comparação é entre instantes e
+  // não depende do fuso do PostgreSQL nem do processo.
   async failStalePending(olderThanMs: number): Promise<number> {
     const result = await this.transactionRepo
       .createQueryBuilder()
@@ -120,10 +121,9 @@ export class TransactionsService {
         failureReason: GENERIC_FAILURE_REASON,
       })
       .where('status = :status', { status: TransactionStatus.PENDING })
-      .andWhere(
-        'created_at < now()::timestamp - make_interval(secs => :seconds)',
-        { seconds: olderThanMs / 1000 },
-      )
+      .andWhere('created_at < now() - make_interval(secs => :seconds)', {
+        seconds: olderThanMs / 1000,
+      })
       .execute();
     return result.affected ?? 0;
   }
